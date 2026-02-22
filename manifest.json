@@ -7,6 +7,6 @@
   "capabilities": [],
   "enableProposedApi": false,
   "editorType": ["figma"],
-  "networkAccess": { "allowedDomains": [] },
+  "networkAccess": { "allowedDomains": ["none"] },
   "documentAccess": "dynamic-page"
 }
