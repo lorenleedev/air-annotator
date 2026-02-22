@@ -1,0 +1,1170 @@
+<!-- AIR: AI-Readable Annotator v1 -->
+<!-- Copyright (c) 2026 은결. All rights reserved. -->
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 11px;
+    color: var(--figma-color-text);
+    background: var(--figma-color-bg);
+    -webkit-font-smoothing: antialiased;
+    display: flex; flex-direction: column;
+  }
+
+  /* ─── Tabs ─── */
+  .seg-wrap { padding: 6px 12px 6px; display: flex; align-items: center; gap: 6px; }
+  .seg {
+    flex: 1; display: flex;
+    background: var(--figma-color-bg-secondary);
+    border-radius: 6px; padding: 2px; gap: 1px;
+  }
+  .seg-btn {
+    flex: 1; padding: 5px 0; text-align: center; cursor: pointer;
+    color: var(--figma-color-text-secondary);
+    font-weight: 600; font-size: 11px;
+    border-radius: 4px; border: none; background: none;
+    transition: all 0.1s;
+  }
+  .seg-btn:hover { color: var(--figma-color-text); }
+  .seg-btn.active {
+    color: var(--figma-color-text);
+    background: var(--figma-color-bg);
+    box-shadow: 0 0 0 1px var(--figma-color-border), 0 1px 2px rgba(0,0,0,0.06);
+  }
+  .lang-btn {
+    height: 24px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; gap: 4px;
+    border: 1px solid var(--figma-color-border);
+    border-radius: 6px; background: none; cursor: pointer;
+    font-size: 10px; font-weight: 600; line-height: 1;
+    color: var(--figma-color-text-secondary);
+    padding: 0 6px;
+    transition: all 0.15s;
+  }
+  .lang-btn:hover { background: var(--figma-color-bg-hover); color: var(--figma-color-text); border-color: var(--figma-color-border-strong); }
+
+  .panel { display: none; padding: 6px 12px 12px; overflow-y: auto; flex: 1; }
+  .panel::-webkit-scrollbar { width: 4px; }
+  .panel::-webkit-scrollbar-thumb { background: var(--figma-color-bg-secondary); border-radius: 4px; }
+  .panel.active { display: flex; flex-direction: column; }
+
+  /* ─── Section ─── */
+  .section { margin-bottom: 8px; }
+  .section-label { font-size: 11px; font-weight: 600; color: var(--figma-color-text); margin-bottom: 6px; padding-top: 2px; }
+  .divider { height: 1px; background: var(--figma-color-border); margin: 6px 0; }
+
+  /* ─── Node Info (button style) ─── */
+  .node-info-btn {
+    display: flex; align-items: flex-start; gap: 6px;
+    padding: 6px 8px; cursor: pointer; border-radius: 6px;
+    background: var(--figma-color-bg-secondary);
+    border: 1px solid transparent;
+    transition: background 0.1s, border-color 0.1s;
+    margin-bottom: 12px;
+  }
+  .node-info-btn:hover { background: var(--figma-color-bg-hover); border-color: var(--figma-color-border); }
+  .node-info-btn:active { background: var(--figma-color-bg-pressed, var(--figma-color-bg-hover)); }
+  .node-name-row { display: flex; align-items: center; gap: 5px; }
+  .node-goto { color: var(--figma-color-icon-tertiary); flex-shrink: 0; margin-left: auto; align-self: center; }
+  .node-info-btn:hover .node-goto { color: var(--figma-color-icon-secondary); }
+  .node-info { display: flex; align-items: flex-start; gap: 8px; padding: 4px; cursor: pointer; border-radius: 6px; margin: 0 -4px; transition: background 0.1s; }
+  .node-info:hover { background: var(--figma-color-bg-hover); }
+  .node-badge {
+    min-width: 20px; height: auto; border-radius: 4px;
+    font-size: 9px; font-weight: 700; color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; padding: 2px 6px; margin-top: 2px;
+  }
+  .node-badge.empty { width: 8px; min-width: 8px; height: 8px; border-radius: 3px; padding: 0; }
+  .node-text { min-width: 0; flex: 1; }
+  .node-name { font-weight: 600; font-size: 11px; color: var(--figma-color-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+  .node-meta { font-size: 10px; color: var(--figma-color-text-tertiary); font-family: 'SF Mono', Consolas, monospace; margin-top: 1px; }
+
+  /* ─── Fields ─── */
+  .field { margin-bottom: 12px; }
+  .field-label { font-size: 11px; font-weight: 400; color: var(--figma-color-text); margin-bottom: 4px; }
+  input[type="text"] {
+    width: 100%; border: 1px solid var(--figma-color-border);
+    border-radius: 4px; padding: 5px 8px; font-size: 11px;
+    background: var(--figma-color-bg); color: var(--figma-color-text);
+    font-family: Inter, sans-serif; outline: none; transition: border-color 0.15s;
+  }
+  input[type="text"]:focus { border-color: var(--figma-color-border-selected); }
+
+  /* ─── Color Palette ─── */
+  .color-row { display: flex; gap: 3px; align-items: center; }
+  .color-dot {
+    width: 16px; height: 16px; border-radius: 3px; cursor: pointer;
+    border: 1.5px solid transparent; transition: border-color 0.1s, box-shadow 0.1s;
+    box-sizing: border-box;
+  }
+  .color-dot.selected { border-color: var(--figma-color-border-selected); box-shadow: 0 0 0 1px var(--figma-color-border-selected); }
+  .color-custom {
+    width: 16px; height: 16px; border-radius: 3px; position: relative; cursor: pointer;
+    border: 1.5px dashed var(--figma-color-border);
+    display: flex; align-items: center; justify-content: center;
+    box-sizing: border-box;
+  }
+  .color-custom span {
+    font-size: 11px; line-height: 1; color: var(--figma-color-text-tertiary);
+    pointer-events: none; display: flex; align-items: center; justify-content: center;
+    width: 100%; height: 100%;
+  }
+  .color-custom input[type="color"] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer;
+    width: 100%; height: 100%; padding: 0; border: none;
+  }
+
+  /* ─── Property Chips ─── */
+
+  /* ─── Hero Banner ─── */
+  .hero-banner {
+    position: relative; overflow: hidden;
+    padding: 14px 16px 10px 14px; 
+    background: #111113;
+    background-image:
+      linear-gradient(rgba(255,255,255,.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px);
+    background-size: 20px 20px;
+    border-bottom: 1px solid rgba(255,255,255,.06);
+  }
+  .hero-deco { position: absolute; top: 0; right: 0; width: 3px; bottom: 0; display: flex; flex-direction: column; }
+  .hero-block { flex: 1; }
+  .hero-block.b1 { background: #F24E1E; }
+  .hero-block.b2 { background: #FF7262; }
+  .hero-block.b3 { background: #A259FF; }
+  .hero-block.b4 { background: #1ABCFE; }
+  .hero-block.b5 { background: #0ACF83; }
+  .hero-content { position: relative; z-index: 1; }
+  .hero-top-row {
+    position: relative; z-index: 1; 
+    display: flex; align-items: center; justify-content: flex-end;
+    margin-bottom: 0;
+  }
+  .hero-help-btn {
+    width: 18px; height: 18px; border-radius: 50%; border: 1px solid rgba(255,255,255,.15);
+    background: rgba(255,255,255,.04); color: rgba(255,255,255,.35);
+    font-size: 10px; font-weight: 600; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background .15s, color .15s;
+  }
+  .hero-help-btn:hover { background: rgba(255,255,255,.1); color: rgba(255,255,255,.6); }
+  .hero-brand { margin-bottom: 2px; display: flex; align-items: flex-end; gap: 6px; }
+  .hero-brand-main {
+    font-size: 16px; font-weight: 800; line-height: 1.2;
+    color: #fff; letter-spacing: -0.3px;
+  }
+  .hero-brand-main .blue { color: #2B8CFF; }
+  .hero-brain { font-size: 18px; line-height: 1; margin-bottom: 1px; }
+  .hero-bottom-row {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    margin-top: 2px;
+  }
+  .hero-sub { font-size: 9.5px; color: rgba(255,255,255,.35); }
+  .hero-made-by { font-size: 8.5px; color: rgba(255,255,255,.25); letter-spacing: 0.2px; white-space: nowrap; }
+  .hero-made-by b { color: rgba(255,255,255,.4); font-weight: 600; }
+  .chip-row { display: flex; gap: 3px; flex-wrap: wrap; margin-bottom: 4px; }
+  .chip {
+    padding: 3px 7px; border-radius: 4px;
+    background: var(--figma-color-bg-secondary);
+    font-size: 10px; font-weight: 500; color: var(--figma-color-text-secondary);
+    border: none; cursor: pointer; transition: background 0.1s, color 0.1s;
+  }
+  .chip:hover { background: var(--figma-color-bg-hover); color: var(--figma-color-text); }
+
+  /* ─── Buttons ─── */
+  .btn-row { display: flex; gap: 6px; margin-top: 12px; flex-shrink: 0; }
+  .btn {
+    padding: 6px 16px; border: none; border-radius: 6px;
+    font-size: 11px; font-weight: 600; cursor: pointer; text-align: center; transition: background 0.1s;
+  }
+  .btn-brand { background: var(--figma-color-bg-brand); color: var(--figma-color-text-onbrand); }
+  .btn-brand:hover { filter: brightness(1.1); }
+  .btn-brand.btn-muted { background: var(--figma-color-bg-secondary); color: var(--figma-color-text-tertiary); pointer-events: none; }
+  .btn-brand.btn-dirty { animation: pulse-save 0.4s ease; }
+  @keyframes pulse-save {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+  }
+  .btn-secondary { background: var(--figma-color-bg-secondary); color: var(--figma-color-text-secondary); }
+  .btn-secondary:hover { background: var(--figma-color-bg-hover); }
+  .btn-danger { background: rgba(244,63,94,.1); color: #F43F5E; }
+  .btn-danger:hover { background: rgba(244,63,94,.2); }
+
+  .spec-delete {
+    width: 24px; height: 24px; border: none; border-radius: 4px;
+    background: none; cursor: pointer; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--figma-color-text-tertiary); opacity: 0; transition: all 0.15s;
+  }
+  .spec-item:hover .spec-delete { opacity: 1; }
+  .spec-delete:hover { background: rgba(244,63,94,.12); color: #F43F5E; }
+  .spec-delete svg { width: 14px; height: 14px; }
+
+  /* ─── Textarea ─── */
+  textarea {
+    width: 100%; border: 1px solid var(--figma-color-border);
+    border-radius: 4px; padding: 6px 8px;
+    font-family: 'SF Mono', Consolas, monospace; font-size: 10.5px;
+    min-height: 60px; flex: 1; line-height: 1.6;
+    background: var(--figma-color-bg); color: var(--figma-color-text);
+    outline: none; resize: none; transition: border-color 0.15s;
+  }
+  textarea:focus { border-color: var(--figma-color-border-selected); }
+
+  /* ─── Empty state ─── */
+  .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; gap: 10px; }
+  .empty-state p { font-size: 11px; color: var(--figma-color-text-tertiary); }
+
+  /* ─── List ─── */
+  .list-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; padding-top: 4px; }
+  .list-actions { display: flex; gap: 1px; }
+  .list-btn {
+    padding: 4px 8px; font-size: 11px; font-weight: 500;
+    color: var(--figma-color-text-secondary); background: none;
+    border: none; cursor: pointer; border-radius: 4px; transition: background 0.1s, color 0.1s;
+    position: relative;
+  }
+  .list-btn:hover { background: var(--figma-color-bg-hover); color: var(--figma-color-text); }
+  .list-btn[data-tip]:hover::after {
+    content: attr(data-tip);
+    position: absolute; top: calc(100% + 6px); right: 0;
+    background: var(--figma-color-bg-secondary); color: var(--figma-color-text);
+    font-size: 10px; font-weight: 400; white-space: nowrap;
+    padding: 4px 8px; border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25); border: 1px solid var(--figma-color-border);
+    pointer-events: none; z-index: 100;
+  }
+  .spec-item {
+    border-radius: 6px; padding: 7px 8px; margin-bottom: 2px;
+    display: flex; gap: 8px; align-items: center; cursor: pointer; transition: background 0.1s;
+  }
+  .spec-item:hover { background: var(--figma-color-bg-hover); }
+  .spec-num {
+    min-width: 20px; height: auto; border-radius: 4px;
+    font-size: 9px; font-weight: 700; padding: 2px 6px;
+    display: flex; align-items: center; justify-content: center; color: #fff; flex-shrink: 0;
+  }
+  .spec-body { flex: 1; min-width: 0; }
+  .spec-title-row { display: flex; align-items: center; gap: 6px; }
+  .spec-title { font-weight: 500; font-size: 11px; color: var(--figma-color-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .spec-preview { font-size: 10px; color: var(--figma-color-text-tertiary); font-family: 'SF Mono', Consolas, monospace; margin-top: 2px; margin-left: 26px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .spec-arrow { color: var(--figma-color-icon-tertiary); flex-shrink: 0; }
+  .spec-arrow svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.5; }
+  .spec-item:hover .spec-arrow { color: var(--figma-color-icon-secondary); }
+  .toast {
+    display: none; position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%);
+    background: var(--figma-color-bg-secondary); color: var(--figma-color-text);
+    padding: 6px 12px; border-radius: 6px; font-size: 10px; font-weight: 500;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2); border: 1px solid var(--figma-color-border);
+  }
+
+  /* ─── Help button ─── */
+  .help-btn {
+    width: 24px; height: 24px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--figma-color-border);
+    border-radius: 6px; background: none; cursor: pointer;
+    font-size: 11px; font-weight: 600; line-height: 1;
+    color: var(--figma-color-text-secondary);
+    transition: all 0.15s;
+  }
+  .help-btn:hover { background: var(--figma-color-bg-hover); color: var(--figma-color-text); border-color: var(--figma-color-border-strong); }
+
+  /* ─── Onboarding overlay ─── */
+  .ob-overlay {
+    display: none; position: fixed; inset: 0; z-index: 200;
+    background: var(--figma-color-bg);
+    flex-direction: column;
+  }
+  .ob-overlay.show { display: flex; }
+
+  .ob-slide {
+    flex: 1; display: none; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 24px 20px 16px; gap: 0; text-align: center;
+  }
+  .ob-slide.active { display: flex; }
+
+  .ob-illust {
+    width: 320px; height: 240px;
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 16px;
+  }
+
+  .ob-step-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--figma-color-bg-brand); color: var(--figma-color-text-onbrand);
+    font-size: 11px; font-weight: 700; margin-bottom: 8px;
+  }
+  .ob-step-badge.star { background: linear-gradient(135deg, #D97706, #B45309); font-size: 10px; }
+
+  .ob-title { font-size: 13px; font-weight: 700; color: var(--figma-color-text); margin-bottom: 6px; }
+  .ob-desc { font-size: 11px; color: var(--figma-color-text-secondary); line-height: 1.6; max-width: 280px; }
+  .ob-desc b { color: var(--figma-color-text); font-weight: 600; }
+
+  /* Dots */
+  .ob-dots {
+    display: flex; gap: 6px; justify-content: center;
+    padding: 12px 0 8px;
+  }
+  .ob-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--figma-color-border-strong);
+    transition: all 0.2s;
+  }
+  .ob-dot.active { background: var(--figma-color-bg-brand); width: 16px; border-radius: 3px; }
+
+  /* Nav */
+  .ob-nav {
+    display: flex; gap: 6px; padding: 0 20px 16px; justify-content: center;
+  }
+  .ob-nav-btn {
+    padding: 7px 20px; border: none; border-radius: 6px;
+    font-size: 11px; font-weight: 600; cursor: pointer;
+    transition: all 0.15s;
+  }
+  .ob-nav-next { background: var(--figma-color-bg-brand); color: var(--figma-color-text-onbrand); }
+  .ob-nav-next:hover { filter: brightness(1.1); }
+  .ob-nav-skip { background: none; color: var(--figma-color-text-tertiary); }
+  .ob-nav-skip:hover { color: var(--figma-color-text-secondary); }
+
+  /* ─── Footer ─── */
+  .footer {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 12px;
+    border-top: 1px solid var(--figma-color-border);
+    background: var(--figma-color-bg);
+    flex-shrink: 0;
+  }
+  .footer-left { display: flex; align-items: center; gap: 2px; }
+  .footer-btn {
+    height: 24px;
+    display: flex; align-items: center; justify-content: center;
+    border: none; border-radius: 4px; background: none; cursor: pointer;
+    color: var(--figma-color-text-tertiary);
+    transition: all 0.15s;
+  }
+  .footer-btn:hover { background: var(--figma-color-bg-hover); color: var(--figma-color-text-secondary); }
+  .footer-btn svg { width: 14px; height: 14px; }
+  .lang-btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+  .footer-brand {
+    font-size: 9px; font-weight: 500; color: var(--figma-color-text-tertiary);
+    letter-spacing: 0.3px;
+  }
+  .footer-cta {
+    display: flex; align-items: center; gap: 4px;
+    font-size: 9px; font-weight: 500; color: var(--figma-color-text-tertiary);
+    letter-spacing: 0.3px; text-decoration: none;
+    padding: 2px 6px; border-radius: 4px;
+    transition: all 0.15s;
+  }
+  .footer-cta:hover { color: var(--figma-color-text-secondary); background: var(--figma-color-bg-hover); }
+  .footer-cta svg { width: 11px; height: 11px; flex-shrink: 0; }
+  .footer-dot { opacity: 0.4; }
+  .footer-feedback { opacity: 0.7; }
+  .theme-btn { gap: 4px; padding: 0 6px; }
+  .theme-btn svg { width: 14px; height: 14px; }
+</style>
+
+<div class="hero-banner">
+  <div class="hero-deco">
+    <div class="hero-block b1"></div>
+    <div class="hero-block b2"></div>
+    <div class="hero-block b3"></div>
+    <div class="hero-block b4"></div>
+    <div class="hero-block b5"></div>
+  </div>
+  <div class="hero-top-row">
+    <button class="hero-help-btn" onclick="showOnboarding()">?</button>
+  </div>
+  <div class="hero-content">
+    <div class="hero-brand">
+      <span class="hero-brand-main" data-i18n-html="hero_brand">Make Figma<br><span class="blue">AI-Readable</span></span>
+      <span class="hero-brain">🧠</span>
+    </div>
+    <div class="hero-bottom-row">
+      <span class="hero-sub" data-i18n="hero_sub">Annotate layers, share the Figma link with AI.</span>
+      <span class="hero-made-by" data-i18n-html="hero_credit">Made by <b>은결</b></span>
+    </div>
+  </div>
+</div>
+
+<div class="seg-wrap">
+  <div class="seg">
+    <button class="seg-btn active" onclick="switchTab('sel')" data-i18n="tab_edit">Edit</button>
+    <button class="seg-btn" onclick="switchTab('list')" data-i18n="tab_annotations">Annotations</button>
+  </div>
+</div>
+
+<!-- Onboarding Overlay -->
+<div class="ob-overlay" id="obOverlay">
+  <!-- Slide 1: Select -->
+  <div class="ob-slide active" id="ob-slide-0">
+    <div class="ob-illust">
+      <svg width="272" height="204" viewBox="0 0 160 120" fill="none">
+        <rect x="20" y="16" width="120" height="80" rx="6" stroke="var(--figma-color-border-strong)" stroke-width="1.5" fill="none" stroke-dasharray="4 3"/>
+        <rect x="36" y="32" width="88" height="48" rx="4" stroke="var(--figma-color-bg-brand)" stroke-width="2" fill="rgba(12,140,233,0.06)"/>
+        <circle cx="32" cy="32" r="3" fill="var(--figma-color-bg-brand)"/>
+        <path d="M32 35 L32 76" stroke="var(--figma-color-bg-brand)" stroke-width="1" stroke-dasharray="2 2"/>
+        <text x="40" y="28" font-size="6.5" fill="var(--figma-color-text-secondary)" font-weight="600">Sign Up Page</text>
+        <rect x="44" y="40" width="72" height="6" rx="1.5" fill="var(--figma-color-border)"/>
+        <rect x="44" y="52" width="72" height="4" rx="1" fill="var(--figma-color-border)" opacity="0.5"/>
+        <rect x="44" y="60" width="72" height="4" rx="1" fill="var(--figma-color-border)" opacity="0.5"/>
+        <rect x="44" y="68" width="72" height="4" rx="1" fill="var(--figma-color-border)" opacity="0.5"/>
+        <text x="80" y="108" font-size="7" fill="var(--figma-color-text-tertiary)" text-anchor="middle">↑ click to select</text>
+      </svg>
+    </div>
+    <div class="ob-step-badge">1</div>
+    <div class="ob-title" data-i18n="ob_t1">Select a layer</div>
+    <div class="ob-desc" data-i18n="ob_d1">Click any frame, component, or group on your canvas. The plugin will show its info.</div>
+  </div>
+
+  <!-- Slide 2: Annotate -->
+  <div class="ob-slide" id="ob-slide-1">
+    <div class="ob-illust">
+      <svg width="306" height="204" viewBox="0 0 180 120" fill="none">
+        <rect x="16" y="12" width="148" height="96" rx="6" fill="var(--figma-color-bg-secondary)" stroke="var(--figma-color-border)" stroke-width="1"/>
+        <!-- chips -->
+        <rect x="24" y="22" width="32" height="14" rx="3" fill="rgba(12,140,233,0.15)"/><text x="40" y="32" font-size="7" fill="var(--figma-color-bg-brand)" text-anchor="middle" font-weight="600">Route</text>
+        <rect x="60" y="22" width="28" height="14" rx="3" fill="rgba(12,140,233,0.15)"/><text x="74" y="32" font-size="7" fill="var(--figma-color-bg-brand)" text-anchor="middle" font-weight="600">Auth</text>
+        <rect x="92" y="22" width="24" height="14" rx="3" fill="rgba(12,140,233,0.15)"/><text x="104" y="32" font-size="7" fill="var(--figma-color-bg-brand)" text-anchor="middle" font-weight="600">API</text>
+        <rect x="120" y="22" width="30" height="14" rx="3" fill="rgba(12,140,233,0.15)"/><text x="135" y="32" font-size="7" fill="var(--figma-color-bg-brand)" text-anchor="middle" font-weight="600">Warn</text>
+        <!-- textarea -->
+        <rect x="24" y="42" width="132" height="56" rx="4" fill="var(--figma-color-bg)" stroke="var(--figma-color-border)" stroke-width="1"/>
+        <text x="30" y="55" font-size="7.5" fill="#7ee787" font-family="monospace">[route] /signup</text>
+        <text x="30" y="67" font-size="7.5" fill="#7ee787" font-family="monospace">[auth]  public</text>
+        <text x="30" y="79" font-size="7.5" fill="#7ee787" font-family="monospace">[api]   POST /users</text>
+        <text x="30" y="91" font-size="7.5" fill="#F97316" font-family="monospace">[warn]  Rate limit: 5/min</text>
+      </svg>
+    </div>
+    <div class="ob-step-badge">2</div>
+    <div class="ob-title" data-i18n="ob_t2">Write annotations with properties</div>
+    <div class="ob-desc" data-i18n-html="ob_d2">Each annotation is linked to a layer. Add properties like <b>[route]</b>, <b>[auth]</b>, <b>[api]</b> so AI can read them alongside the UI context.</div>
+  </div>
+
+  <!-- Slide 3: Save -->
+  <div class="ob-slide" id="ob-slide-2">
+    <div class="ob-illust">
+      <svg width="306" height="204" viewBox="0 0 180 120" fill="none">
+        <!-- canvas frame -->
+        <rect x="10" y="16" width="100" height="70" rx="4" stroke="var(--figma-color-border-strong)" stroke-width="1" fill="none"/>
+        <text x="16" y="13" font-size="6.5" fill="var(--figma-color-text-tertiary)">Sign Up Page</text>
+        <rect x="18" y="26" width="84" height="5" rx="1.5" fill="var(--figma-color-border)"/>
+        <rect x="18" y="36" width="84" height="3.5" rx="1" fill="var(--figma-color-border)" opacity="0.4"/>
+        <rect x="18" y="44" width="84" height="3.5" rx="1" fill="var(--figma-color-border)" opacity="0.4"/>
+        <rect x="18" y="52" width="84" height="3.5" rx="1" fill="var(--figma-color-border)" opacity="0.4"/>
+        <!-- marker badge -->
+        <rect x="12" y="18" width="14" height="10" rx="2.5" fill="var(--figma-color-bg-brand)"/>
+        <text x="19" y="26" font-size="7" fill="#fff" text-anchor="middle" font-weight="700">1</text>
+        <!-- NEW spec panel card -->
+        <rect x="118" y="10" width="58" height="82" rx="5" fill="#fff" stroke="#e8e8e8" stroke-width="0.5"/>
+        <!-- panel shadow hint -->
+        <rect x="119" y="11" width="56" height="80" rx="4.5" fill="none" stroke="#0001" stroke-width="0.3"/>
+        <!-- header: badge + title -->
+        <rect x="122" y="14" width="8" height="6" rx="1.5" fill="#F97316"/>
+        <text x="126" y="18.2" font-size="3.5" fill="#fff" text-anchor="middle" font-weight="700">1</text>
+        <text x="133" y="18" font-size="4.5" fill="#1a1a1a" font-weight="700">Sign Up Page</text>
+        <text x="133" y="23" font-size="3" fill="#999">FRAME</text>
+        <!-- header border -->
+        <line x1="120" y1="26" x2="174" y2="26" stroke="#f0f0f0" stroke-width="0.5"/>
+        <!-- desc block -->
+        <rect x="122" y="29" width="50" height="8" rx="2" fill="#fafafa"/>
+        <text x="125" y="34.5" font-size="3.2" fill="#6b7280">Email &amp; password form</text>
+        <!-- tag rows -->
+        <rect x="122" y="40" width="16" height="6" rx="1.5" fill="#EEF2FF"/>
+        <text x="130" y="44.5" font-size="3" fill="#4F46E5" text-anchor="middle" font-weight="700">ROUTE</text>
+        <text x="141" y="44.5" font-size="3.5" fill="#374151" font-family="monospace">/signup</text>
+        <rect x="122" y="49" width="14" height="6" rx="1.5" fill="#F0FDF4"/>
+        <text x="129" y="53.5" font-size="3" fill="#16A34A" text-anchor="middle" font-weight="700">AUTH</text>
+        <text x="139" y="53.5" font-size="3.5" fill="#374151" font-family="monospace">public</text>
+        <rect x="122" y="58" width="10" height="6" rx="1.5" fill="#EFF6FF"/>
+        <text x="127" y="62.5" font-size="3" fill="#2563EB" text-anchor="middle" font-weight="700">API</text>
+        <text x="135" y="62.5" font-size="3.5" fill="#374151" font-family="monospace">POST /users</text>
+        <!-- separator -->
+        <line x1="122" y1="67" x2="172" y2="67" stroke="#f3f4f6" stroke-width="0.4"/>
+        <rect x="122" y="70" width="14" height="6" rx="1.5" fill="#FFF7ED"/>
+        <text x="129" y="74.5" font-size="3" fill="#EA580C" text-anchor="middle" font-weight="700">WARN</text>
+        <text x="139" y="74.5" font-size="3.5" fill="#C2410C" font-family="monospace">5/min limit</text>
+        <!-- footer -->
+        <line x1="120" y1="80" x2="174" y2="80" stroke="#f0f0f0" stroke-width="0.4"/>
+        <text x="147" y="86" font-size="2.5" fill="#b0b0b0" text-anchor="middle">AIR · Do not edit directly</text>
+        <!-- arrow -->
+        <path d="M112 50 L116 50" stroke="var(--figma-color-bg-brand)" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <defs><marker id="arrowhead" markerWidth="6" markerHeight="4" refX="5" refY="2" orient="auto"><polygon points="0 0, 6 2, 0 4" fill="var(--figma-color-bg-brand)"/></marker></defs>
+        <!-- Save button -->
+        <rect x="58" y="96" width="64" height="18" rx="4" fill="var(--figma-color-bg-brand)"/>
+        <text x="90" y="108" font-size="8" fill="#fff" text-anchor="middle" font-weight="700">Save →</text>
+      </svg>
+    </div>
+    <div class="ob-step-badge">3</div>
+    <div class="ob-title" data-i18n="ob_t3">Panel appears on canvas</div>
+    <div class="ob-desc" data-i18n="ob_d3">A readable annotation panel is created next to the layer. Your annotations stay embedded in the Figma file.</div>
+  </div>
+
+  <!-- Slide 4: AI understands -->
+  <div class="ob-slide" id="ob-slide-3">
+    <div class="ob-illust">
+      <svg width="320" height="224" viewBox="0 0 200 140" fill="none">
+        <!-- BEFORE side -->
+        <rect x="4" y="14" width="90" height="88" rx="5" fill="var(--figma-color-bg-secondary)" stroke="rgba(244,63,94,.3)" stroke-width="1"/>
+        <text x="49" y="10" font-size="6" fill="#F43F5E" text-anchor="middle" font-weight="700">BEFORE</text>
+        <!-- unnamed frames stacked -->
+        <rect x="12" y="22" width="74" height="10" rx="2" stroke="var(--figma-color-border)" stroke-width="0.7" fill="none"/>
+        <text x="16" y="29.5" font-size="5" fill="var(--figma-color-text-tertiary)">Frame 247</text>
+        <rect x="12" y="36" width="74" height="10" rx="2" stroke="var(--figma-color-border)" stroke-width="0.7" fill="none"/>
+        <text x="16" y="43.5" font-size="5" fill="var(--figma-color-text-tertiary)">Frame 248</text>
+        <rect x="12" y="50" width="74" height="10" rx="2" stroke="var(--figma-color-border)" stroke-width="0.7" fill="none"/>
+        <text x="16" y="57.5" font-size="5" fill="var(--figma-color-text-tertiary)">Frame 249</text>
+        <rect x="12" y="64" width="74" height="10" rx="2" stroke="var(--figma-color-border)" stroke-width="0.7" fill="none"/>
+        <text x="16" y="71.5" font-size="5" fill="var(--figma-color-text-tertiary)">Group 12</text>
+        <!-- AI confused -->
+        <text x="49" y="86" font-size="5.5" fill="#F43F5E" text-anchor="middle">🤷 AI: "No context.</text>
+        <text x="49" y="94" font-size="5.5" fill="#F43F5E" text-anchor="middle">What do these do?"</text>
+
+        <!-- Arrow -->
+        <path d="M98 58 L106 58" stroke="var(--figma-color-text-tertiary)" stroke-width="1" marker-end="url(#obArrow)"/>
+        <defs><marker id="obArrow" markerWidth="5" markerHeight="4" refX="4" refY="2" orient="auto"><polygon points="0 0,5 2,0 4" fill="var(--figma-color-text-tertiary)"/></marker></defs>
+
+        <!-- WITH AIR side -->
+        <rect x="108" y="14" width="88" height="88" rx="5" fill="var(--figma-color-bg-secondary)" stroke="rgba(5,150,105,.3)" stroke-width="1"/>
+        <text x="152" y="10" font-size="6" fill="#059669" text-anchor="middle" font-weight="700">WITH AIR</text>
+        <!-- mini spec panel card -->
+        <rect x="114" y="20" width="76" height="48" rx="3" fill="#fff" stroke="#e8e8e8" stroke-width="0.4"/>
+        <!-- header -->
+        <rect x="117" y="23" width="7" height="5" rx="1.5" fill="#F97316"/>
+        <text x="120.5" y="26.5" font-size="3" fill="#fff" text-anchor="middle" font-weight="700">1</text>
+        <text x="127" y="26.5" font-size="3.5" fill="#1a1a1a" font-weight="700">Sign Up Page</text>
+        <line x1="115" y1="30" x2="189" y2="30" stroke="#f0f0f0" stroke-width="0.3"/>
+        <!-- tag rows -->
+        <rect x="117" y="33" width="14" height="5" rx="1" fill="#EEF2FF"/>
+        <text x="124" y="36.8" font-size="2.8" fill="#4F46E5" text-anchor="middle" font-weight="700">ROUTE</text>
+        <text x="134" y="36.8" font-size="3" fill="#374151" font-family="monospace">/signup</text>
+        <rect x="117" y="40" width="12" height="5" rx="1" fill="#F0FDF4"/>
+        <text x="123" y="43.8" font-size="2.8" fill="#16A34A" text-anchor="middle" font-weight="700">AUTH</text>
+        <text x="132" y="43.8" font-size="3" fill="#374151" font-family="monospace">public</text>
+        <rect x="117" y="47" width="10" height="5" rx="1" fill="#EFF6FF"/>
+        <text x="122" y="50.8" font-size="2.8" fill="#2563EB" text-anchor="middle" font-weight="700">API</text>
+        <text x="130" y="50.8" font-size="3" fill="#374151" font-family="monospace">POST /users</text>
+        <rect x="117" y="54" width="13" height="5" rx="1" fill="#FFF7ED"/>
+        <text x="123.5" y="57.8" font-size="2.8" fill="#EA580C" text-anchor="middle" font-weight="700">WARN</text>
+        <text x="133" y="57.8" font-size="3" fill="#C2410C" font-family="monospace">5/min limit</text>
+        <!-- footer -->
+        <line x1="115" y1="62" x2="189" y2="62" stroke="#f0f0f0" stroke-width="0.3"/>
+        <text x="152" y="66" font-size="2.2" fill="#b0b0b0" text-anchor="middle">AIR · Do not edit directly</text>
+
+        <!-- AI understands -->
+        <text x="152" y="80" font-size="5.5" fill="#059669" text-anchor="middle">🧠 AI: "Tags link specs</text>
+        <text x="152" y="88" font-size="5.5" fill="#059669" text-anchor="middle">to UI — fully parsed!"</text>
+
+        <!-- Figma link at bottom -->
+        <rect x="40" y="118" width="120" height="16" rx="4" fill="var(--figma-color-bg-secondary)" stroke="var(--figma-color-border)" stroke-width="0.5"/>
+        <text x="100" y="129" font-size="6" fill="var(--figma-color-bg-brand)" text-anchor="middle" font-family="monospace">figma.com/design/… → AI</text>
+      </svg>
+    </div>
+    <div class="ob-step-badge star">✦</div>
+    <div class="ob-title" data-i18n="ob_t4">AI understands your design</div>
+    <div class="ob-desc" data-i18n-html="ob_d4"><b>AIR</b> uses numbered tags to connect annotations directly to UI layers, so AI can parse <b>routes, auth, APIs, and rules</b> from just a Figma link.</div>
+  </div>
+
+  <!-- Dots + Nav -->
+  <div class="ob-dots" id="obDots">
+    <div class="ob-dot active"></div><div class="ob-dot"></div><div class="ob-dot"></div><div class="ob-dot"></div>
+  </div>
+  <div class="ob-nav">
+    <button class="ob-nav-btn ob-nav-skip" onclick="closeOnboarding()" data-i18n="ob_skip">Skip</button>
+    <button class="ob-nav-btn ob-nav-next" onclick="nextSlide()" id="obNextBtn" data-i18n="ob_next">Next</button>
+  </div>
+</div>
+
+<!-- Edit -->
+<div id="tab-sel" class="panel active">
+  <div id="selEmpty" class="empty-state">
+    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+      <rect x="6" y="6" width="20" height="20" rx="4" stroke="var(--figma-color-icon-tertiary)" stroke-width="1.5" fill="none"/>
+      <path d="M16 12v8M12 16h8" stroke="var(--figma-color-icon-tertiary)" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>
+    <p data-i18n="empty_select">Select a layer to annotate</p>
+  </div>
+
+  <div id="selContent" style="display:none; flex:1; flex-direction:column;">
+    <div class="node-info-btn" onclick="focusCurrentNode()" title="Focus on canvas">
+      <div class="node-badge empty" id="nodeBadge" style="background:var(--figma-color-bg-brand);"></div>
+      <div class="node-text">
+        <span class="node-name" id="selName">—</span>
+        <div class="node-meta" id="selMeta">—</div>
+      </div>
+      <svg class="node-goto" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><line x1="7" y1="1" x2="7" y2="3"/><line x1="7" y1="11" x2="7" y2="13"/><line x1="1" y1="7" x2="3" y2="7"/><line x1="11" y1="7" x2="13" y2="7"/></svg>
+    </div>
+
+    <div class="section" style="flex:1; display:flex; flex-direction:column; margin-bottom:0;">
+      <div class="field">
+        <div class="field-label" data-i18n="label_tag_color">Tag Color</div>
+        <div class="color-row" id="colorPalette"></div>
+      </div>
+      <div class="field">
+        <div class="field-label" data-i18n="label_title">Title</div>
+        <input type="text" id="selTitle" data-i18n-ph="ph_title" placeholder="e.g. Sign Up Button, Nav Bar..." oninput="markDirty()" />
+      </div>
+      <div class="field" style="flex:1; display:flex; flex-direction:column; margin-bottom:0;">
+        <div class="field-label" data-i18n="sec_properties">Properties</div>
+        <div class="chip-row" id="chipRow"></div>
+        <textarea id="selDesc" data-i18n-ph="ph_desc" oninput="markDirty()" placeholder="This annotation is linked to the selected layer.&#10;AI can read it with context. Add properties for richer specs.&#10;&#10;[desc] Submits the registration form&#10;[api] POST /api/users&#10;[warn] Rate limit: 5 requests/min"></textarea>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-brand btn-muted" id="btnSave" onclick="saveDesc()" data-i18n="btn_save">Save</button>
+      <button class="btn btn-danger" id="btnDelete" onclick="deleteDesc()" data-i18n="btn_delete" style="display:none">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- Annotations List -->
+<div id="tab-list" class="panel">
+  <div class="list-header">
+    <div class="section-label" style="margin:0" data-i18n="list_title">All Annotations</div>
+    <div class="list-actions">
+      <button class="list-btn" onclick="exportSpecs('md')" data-tip="Download as Markdown" data-i18n-tip="tip_md">MD</button>
+      <button class="list-btn" onclick="exportSpecs('json')" data-tip="Download as JSON" data-i18n-tip="tip_json">JSON</button>
+      <button class="list-btn" onclick="rebuildIndex()" data-tip="Rebuild AI spec index" data-i18n-tip="tip_index">Index</button>
+      <button class="list-btn" onclick="refreshList()" data-tip="Refresh list" data-i18n-tip="tip_refresh">↻</button>
+    </div>
+  </div>
+  <div id="specList"></div>
+  <div id="specListEmpty" class="empty-state" style="display:none;">
+    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+      <path d="M10 8h8l4 4v12a2 2 0 01-2 2H10a2 2 0 01-2-2V10a2 2 0 012-2z" stroke="var(--figma-color-icon-tertiary)" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M18 8v4h4" stroke="var(--figma-color-icon-tertiary)" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <p data-i18n="empty_list">No annotations yet</p>
+  </div>
+  <div id="exportToast" class="toast"></div>
+</div>
+
+<!-- Footer -->
+<div class="footer">
+  <div class="footer-left">
+    <button class="footer-btn lang-btn" onclick="toggleLang()" id="langBtn" title="Switch language">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><circle cx="8" cy="8" r="6.5"/><path d="M1.5 8h13M8 1.5c-2 2.5-2 9.5 0 13M8 1.5c2 2.5 2 9.5 0 13"/></svg>
+      <span id="langLabel" style="font-size:9px">EN</span>
+    </button>
+    <button class="footer-btn theme-btn" onclick="toggleTheme()" id="themeBtn" title="Panel theme: Light">
+      <svg id="themeIcon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="3.5"/><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></svg>
+      <span id="themeLabel" style="font-size:9px">Light</span>
+    </button>
+  </div>
+  <a class="footer-cta" href="https://www.linkedin.com/in/lorenlee-dev" target="_blank" title="Send feedback on LinkedIn">
+    <span>AIR: AI-Readable Annotator Beta</span>
+    <span class="footer-dot">·</span>
+    <span class="footer-feedback" data-i18n="footer_feedback">Feedback? DM me</span>
+    <svg viewBox="0 0 16 16" fill="currentColor" width="11" height="11"><path d="M0 1.146C0 .513.526 0 1.175 0h13.65C15.474 0 16 .513 16 1.146v13.708c0 .633-.526 1.146-1.175 1.146H1.175C.526 16 0 15.487 0 14.854V1.146zm4.943 12.248V6.169H2.542v7.225h2.401zm-1.2-8.212c.837 0 1.358-.554 1.358-1.248-.015-.709-.52-1.248-1.342-1.248-.822 0-1.359.54-1.359 1.248 0 .694.521 1.248 1.327 1.248h.016zm4.908 8.212V9.359c0-.216.016-.432.08-.586.173-.431.568-.878 1.232-.878.869 0 1.216.662 1.216 1.634v3.865h2.401V9.25c0-2.22-1.184-3.252-2.764-3.252-1.274 0-1.845.712-2.165 1.198V6.169H6.35c.032.678 0 7.225 0 7.225h2.3z"/></svg>
+  </a>
+</div>
+
+<script>
+// ──────────────────────────────────────
+// i18n
+// ──────────────────────────────────────
+var I18N = {
+  en: {
+    tab_edit: "Edit",
+    tab_annotations: "Annotations",
+    empty_select: "Select a layer to annotate",
+    sec_annotation: "Annotation",
+    label_selected: "Selected Layer",
+    hero_brand: "Make Figma<br><span class='blue'>AI-Readable</span>",
+    hero_sub: "Annotate layers, share the Figma link with AI.",
+    hero_credit: "Made by <b>은결</b>",
+    label_title: "Title",
+    label_tag_color: "Tag Color",
+    sec_properties: "Properties",
+    btn_save: "Save",
+    btn_clear: "Clear",
+    btn_delete: "Delete",
+    confirm_delete: "Delete this annotation? The annotation panel and marker will also be removed.",
+    list_title: "All Annotations",
+    empty_list: "No annotations yet",
+    ph_title: "e.g. Sign Up Button, Nav Bar...",
+    ph_desc: "This annotation is linked to the selected layer.\nAI can read it with context. Add properties for richer specs.\n\n[desc] Submits the registration form\n[api] POST /api/users\n[warn] Rate limit: 5 requests/min",
+    chips: [
+      { tag: "[route] ", label: "Route" },
+      { tag: "[auth] ",  label: "Auth" },
+      { tag: "[desc] ",  label: "Desc" },
+      { tag: "[warn] ",  label: "Warn" },
+      { tag: "[memo] ",  label: "Memo" },
+      { tag: "[ux] ",    label: "UX" },
+      { tag: "[api] ",   label: "API" }
+    ],
+    ob_t1: "Select a layer",
+    ob_d1: "Click any frame, component, or group on your canvas.",
+    ob_t2: "Write annotations with properties",
+    ob_d2: "Each annotation is linked to a layer. Add properties like <b>[route]</b>, <b>[auth]</b>, <b>[api]</b> so AI can read them alongside the UI context.",
+    ob_t3: "Panel appears on canvas",
+    ob_d3: "A readable annotation panel is created next to the layer. Annotations stay embedded in the Figma file.",
+    ob_t4: "AI understands your design",
+    ob_d4: "<b>AIR</b> uses numbered tags to connect annotations directly to UI layers, so AI can parse <b>routes, auth, APIs, and rules</b> from just a Figma link.",
+    ob_skip: "Skip",
+    ob_next: "Next",
+    ob_done: "Got it",
+    footer_feedback: "Feedback? DM me",
+    tip_md: "Download as Markdown",
+    tip_json: "Download as JSON",
+    tip_index: "Rebuild AI spec index",
+    tip_refresh: "Refresh list"
+  },
+  ko: {
+    tab_edit: "편집",
+    tab_annotations: "어노테이션",
+    empty_select: "레이어를 선택하세요",
+    sec_annotation: "어노테이션",
+    label_selected: "선택된 레이어",
+    hero_brand: "Make Figma<br><span class='blue'>AI-Readable</span>",
+    hero_sub: "레이어에 어노테이션을 달고, 피그마 링크를 AI에게 공유하세요.",
+    hero_credit: "Made by <b>은결</b>",
+    label_title: "제목",
+    label_tag_color: "태그 색상",
+    sec_properties: "속성",
+    btn_save: "저장",
+    btn_clear: "초기화",
+    btn_delete: "삭제",
+    confirm_delete: "이 어노테이션을 삭제하시겠습니까? 어노테이션 패널과 마커도 함께 제거됩니다.",
+    list_title: "전체 어노테이션",
+    empty_list: "어노테이션이 없습니다",
+    ph_title: "예: 회원가입 버튼, 네비게이션 바...",
+    ph_desc: "이 어노테이션은 선택한 레이어에 직접 연결됩니다.\nAI가 UI 맥락과 함께 읽을 수 있어요. 속성을 추가하면 더 풍부한 스펙이 됩니다.\n\n[desc] 회원가입 폼 제출 버튼\n[api] POST /api/users\n[warn] 요청 제한 5회/분",
+    chips: [
+      { tag: "[route] ", label: "경로" },
+      { tag: "[auth] ",  label: "권한" },
+      { tag: "[desc] ",  label: "설명" },
+      { tag: "[warn] ",  label: "주의" },
+      { tag: "[memo] ",  label: "메모" },
+      { tag: "[ux] ",    label: "UX" },
+      { tag: "[api] ",   label: "API" }
+    ],
+    ob_t1: "레이어 선택",
+    ob_d1: "캔버스에서 프레임, 컴포넌트, 그룹을 클릭하세요.",
+    ob_t2: "속성과 함께 어노테이션 작성",
+    ob_d2: "어노테이션은 레이어에 직접 연결됩니다. <b>[route]</b>, <b>[auth]</b>, <b>[api]</b> 같은 속성을 추가하면 AI가 UI 맥락과 함께 읽을 수 있어요.",
+    ob_t3: "캔버스에 패널 생성",
+    ob_d3: "레이어 옆에 어노테이션 패널이 생성됩니다. 어노테이션은 Figma 파일에 내장됩니다.",
+    ob_t4: "AI가 디자인을 이해합니다",
+    ob_d4: "<b>AIR</b>는 번호 태그로 어노테이션을 UI 레이어에 직접 연결해, AI가 Figma 링크만으로 <b>경로, 권한, API, 규칙</b>을 파싱할 수 있게 합니다.",
+    ob_skip: "건너뛰기",
+    ob_next: "다음",
+    ob_done: "시작하기",
+    footer_feedback: "Feedback? DM me",
+    tip_md: "마크다운 다운로드",
+    tip_json: "JSON 다운로드",
+    tip_index: "AI용 스펙 인덱스 갱신",
+    tip_refresh: "목록 새로고침"
+  }
+};
+
+var currentLang = "en";
+
+function applyLang() {
+  var t = I18N[currentLang];
+  document.querySelectorAll("[data-i18n]").forEach(function(el) {
+    var key = el.getAttribute("data-i18n");
+    if (t[key]) el.textContent = t[key];
+  });
+  document.querySelectorAll("[data-i18n-html]").forEach(function(el) {
+    var key = el.getAttribute("data-i18n-html");
+    if (t[key]) el.innerHTML = t[key];
+  });
+  document.querySelectorAll("[data-i18n-ph]").forEach(function(el) {
+    var key = el.getAttribute("data-i18n-ph");
+    if (t[key]) el.placeholder = t[key];
+  });
+  document.querySelectorAll("[data-i18n-tip]").forEach(function(el) {
+    var key = el.getAttribute("data-i18n-tip");
+    if (t[key]) el.setAttribute("data-tip", t[key]);
+  });
+  renderChips();
+  // Update onboarding next/skip if visible
+  var nb = document.getElementById("obNextBtn");
+  if (nb) nb.textContent = obSlide >= 3 ? (t.ob_done || "Got it") : (t.ob_next || "Next");
+}
+
+function toggleLang() {
+  currentLang = currentLang === "en" ? "ko" : "en";
+  var label = document.getElementById("langLabel");
+  if (label) label.textContent = currentLang === "en" ? "EN" : "KR";
+  applyLang();
+}
+
+// ──────────────────────────────────────
+// Panel Theme
+// ──────────────────────────────────────
+var panelTheme = "light";
+
+function toggleTheme() {
+  panelTheme = panelTheme === "light" ? "dark" : "light";
+  updateThemeBtn();
+  // 전체 패널 재생성
+  parent.postMessage({ pluginMessage: { type: "rebuild-all-panels", theme: panelTheme } }, "*");
+}
+
+function updateThemeBtn() {
+  var label = document.getElementById("themeLabel");
+  var icon = document.getElementById("themeIcon");
+  var btn = document.getElementById("themeBtn");
+  if (panelTheme === "dark") {
+    label.textContent = "Dark";
+    btn.title = "Panel theme: Dark";
+    icon.innerHTML = '<path d="M13 8a5 5 0 1 1-5.93-4.97A7 7 0 0 0 13 8z"/>';
+  } else {
+    label.textContent = "Light";
+    btn.title = "Panel theme: Light";
+    icon.innerHTML = '<circle cx="8" cy="8" r="3.5"/><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/>';
+  }
+}
+
+function renderChips() {
+  var row = document.getElementById("chipRow");
+  row.innerHTML = "";
+  var chips = I18N[currentLang].chips;
+  for (var i = 0; i < chips.length; i++) {
+    var btn = document.createElement("button");
+    btn.className = "chip";
+    btn.textContent = chips[i].label;
+    btn.onclick = (function(tag) { return function() { insertTag(tag); }; })(chips[i].tag);
+    row.appendChild(btn);
+  }
+}
+
+// ──────────────────────────────────────
+// Core
+// ──────────────────────────────────────
+var currentNodeId = null;
+var selectedColor = "#F24E1E";
+var COLORS = ["#F24E1E", "#FF7262", "#A259FF", "#1ABCFE", "#0ACF83", "#0D0D0D"];
+
+function initPalette() {
+  var pal = document.getElementById("colorPalette");
+  pal.innerHTML = "";
+  for (var i = 0; i < COLORS.length; i++) {
+    var dot = document.createElement("div");
+    dot.className = "color-dot" + (COLORS[i] === selectedColor ? " selected" : "");
+    dot.style.background = COLORS[i];
+    dot.style.borderColor = COLORS[i];
+    dot.dataset.color = COLORS[i];
+    dot.onclick = function() { pickColor(this.dataset.color); };
+    pal.appendChild(dot);
+  }
+  var custom = document.createElement("div");
+  custom.className = "color-custom";
+  var plusIcon = '<svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="4.5" y1="1.5" x2="4.5" y2="7.5"/><line x1="1.5" y1="4.5" x2="7.5" y2="4.5"/></svg>';
+  var swapIcon = '<svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 4.5a3 3 0 0 1 5.2-2"/><path d="M7.5 4.5a3 3 0 0 1-5.2 2"/><polyline points="5.5,1 6.7,2.5 5.2,3.2"/><polyline points="3.5,8 2.3,6.5 3.8,5.8"/></svg>';
+  custom.innerHTML = '<span>' + plusIcon + '</span><input type="color" value="' + selectedColor + '">';
+  function updateCustomIcon() {
+    var hasCustom = pal.querySelector(".color-dot-custom");
+    custom.querySelector("span").innerHTML = hasCustom ? swapIcon : plusIcon;
+  }
+  custom.querySelector("input").oninput = function() {
+    var hex = this.value;
+    if (COLORS.indexOf(hex) === -1) {
+      var existing = pal.querySelector(".color-dot-custom");
+      if (existing) existing.remove();
+      var cdot = document.createElement("div");
+      cdot.className = "color-dot color-dot-custom";
+      cdot.style.background = hex;
+      cdot.style.borderColor = hex;
+      cdot.dataset.color = hex;
+      cdot.onclick = function() { pickColor(this.dataset.color); };
+      pal.insertBefore(cdot, custom);
+      updateCustomIcon();
+    }
+    pickColor(hex);
+  };
+  pal.appendChild(custom);
+  // 기존 어노테이션이 커스텀 컬러면 프리뷰 닷 표시
+  if (COLORS.indexOf(selectedColor) === -1 && selectedColor !== COLORS[0]) {
+    var cdot = document.createElement("div");
+    cdot.className = "color-dot color-dot-custom selected";
+    cdot.style.background = selectedColor;
+    cdot.style.borderColor = selectedColor;
+    cdot.dataset.color = selectedColor;
+    cdot.onclick = function() { pickColor(this.dataset.color); };
+    pal.insertBefore(cdot, custom);
+  }
+  updateCustomIcon();
+}
+
+var _dirtyTimer = null;
+function markDirty() {
+  var btn = document.getElementById("btnSave");
+  if (!btn) return;
+  btn.classList.remove("btn-muted");
+  // 디바운스: 입력 멈추고 500ms 후 펄스
+  clearTimeout(_dirtyTimer);
+  _dirtyTimer = setTimeout(function() {
+    btn.classList.remove("btn-dirty");
+    void btn.offsetWidth;
+    btn.classList.add("btn-dirty");
+  }, 500);
+}
+function markClean() {
+  clearTimeout(_dirtyTimer);
+  var btn = document.getElementById("btnSave");
+  if (!btn) return;
+  btn.classList.add("btn-muted");
+  btn.classList.remove("btn-dirty");
+}
+
+function pickColor(hex) {
+  selectedColor = hex;
+  var dots = document.querySelectorAll(".color-dot");
+  for (var i = 0; i < dots.length; i++) dots[i].classList.toggle("selected", dots[i].dataset.color === hex);
+  document.getElementById("nodeBadge").style.background = hex;
+  markDirty();
+}
+
+function switchTab(id) {
+  var tabIds = ["sel", "list"];
+  document.querySelectorAll(".seg-btn").forEach(function(t, i) { t.classList.toggle("active", tabIds[i] === id); });
+  for (var i = 0; i < tabIds.length; i++) {
+    var el = document.getElementById("tab-" + tabIds[i]);
+    if (el) el.classList.toggle("active", tabIds[i] === id);
+  }
+  if (id === "list") refreshList();
+}
+
+function refreshList() { parent.postMessage({ pluginMessage: { type: "list-specs" } }, "*"); }
+function rebuildIndex() { parent.postMessage({ pluginMessage: { type: "rebuild-index" } }, "*"); }
+
+var cachedSpecs = [];
+var figmaFileKey = "";
+
+function exportSpecs(format) {
+  if (!cachedSpecs || cachedSpecs.length === 0) return;
+  var output = "", filename = "air-annotations", mime = "text/plain";
+  var figmaLink = figmaFileKey ? "https://www.figma.com/design/" + figmaFileKey : "";
+
+  if (format === "json") {
+    var jsonData = {
+      figmaLink: figmaLink,
+      exportedAt: new Date().toISOString(),
+      annotations: cachedSpecs.map(function(s) { return { num: parseInt(s.num), title: s.title || "", color: s.color || "", targetNodeId: s.targetNodeId || "", tags: s.desc || "" }; })
+    };
+    output = JSON.stringify(jsonData, null, 2); filename += ".json"; mime = "application/json";
+  }
+  if (format === "md") {
+    output = "# AI-Readable Annotation List\n\n";
+    if (figmaLink) output += "> Figma: " + figmaLink + "\n\n";
+    for (var i = 0; i < cachedSpecs.length; i++) {
+      var s = cachedSpecs[i];
+      output += "## [AIR-" + s.num + "] " + (s.title || "(untitled)") + "\n\n";
+      if (s.desc) { s.desc.split("\n").forEach(function(l) { l = l.trim(); if (l) output += "- " + l + "\n"; }); }
+      output += "\n---\n\n";
+    }
+    filename += ".md"; mime = "text/markdown";
+  }
+  var blob = new Blob([output], { type: mime + ";charset=utf-8" });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a"); a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+  var toast = document.getElementById("exportToast");
+  toast.textContent = filename + " downloaded"; toast.style.display = "block";
+  setTimeout(function() { toast.style.display = "none"; }, 2000);
+}
+
+function renderSpecList(specs) {
+  cachedSpecs = specs || [];
+  var container = document.getElementById("specList"), empty = document.getElementById("specListEmpty");
+  container.innerHTML = "";
+  if (!specs || specs.length === 0) { empty.style.display = "flex"; return; }
+  empty.style.display = "none";
+  for (var i = 0; i < specs.length; i++) {
+    var s = specs[i], item = document.createElement("div");
+    item.className = "spec-item";
+    var numColor = s.color || "#F24E1E";
+    item.innerHTML =
+      '<div class="spec-body">' +
+        '<div class="spec-title-row">' +
+          '<div class="spec-num" style="background:' + numColor + '">' + s.num + '</div>' +
+          '<div class="spec-title">' + (s.title || '(untitled)') + '</div>' +
+        '</div>' +
+        '<div class="spec-preview">' + (s.preview || '\u2014') + '</div>' +
+      '</div>' +
+      '<button class="spec-delete" data-num="' + s.num + '" data-target="' + (s.targetNodeId || '') + '" title="Delete">' +
+        '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' +
+        '<path d="M3 4h10M6 4V3a1 1 0 011-1h2a1 1 0 011 1v1M5 4v8.5a1 1 0 001 1h4a1 1 0 001-1V4"/></svg>' +
+      '</button>' +
+      '<div class="spec-arrow"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>';
+    // 삭제 버튼 클릭
+    item.querySelector(".spec-delete").onclick = (function(num, targetId) {
+      return function(e) {
+        e.stopPropagation();
+        deleteFromList(num, targetId);
+      };
+    })(s.num, s.targetNodeId);
+    // 항목 클릭 → 선택 + Edit 탭
+    item.onclick = (function(nodeId) {
+      return function() {
+        if (nodeId) parent.postMessage({ pluginMessage: { type: "select-node", nodeId: nodeId } }, "*");
+        setTimeout(function() { switchTab("sel"); }, 200);
+      };
+    })(s.targetNodeId);
+    container.appendChild(item);
+  }
+}
+
+function showSelContent(name, meta, title, desc) {
+  document.getElementById("selEmpty").style.display = "none";
+  document.getElementById("selContent").style.display = "flex";
+  var displayName = name.replace(/^\[AIR-\d+\]\s*/, "");
+  document.getElementById("selName").textContent = displayName;
+  document.getElementById("selMeta").textContent = meta;
+  document.getElementById("selTitle").value = title || "";
+  document.getElementById("selDesc").value = desc || "";
+
+  // 뱃지: [N] 번호 있으면 표시, 없으면 작은 점
+  var badge = document.getElementById("nodeBadge");
+  var numMatch = name.match(/^\[AIR-(\d+)\]/);
+  if (numMatch) {
+    badge.textContent = numMatch[1];
+    badge.classList.remove("empty");
+  } else {
+    badge.textContent = "";
+    badge.classList.add("empty");
+  }
+
+  var hasAnnotation = !!numMatch;
+  updateDeleteBtn(hasAnnotation);
+  markClean();
+}
+
+function saveDesc() {
+  if (!currentNodeId) return;
+  parent.postMessage({ pluginMessage: {
+    type: "write-desc", nodeId: currentNodeId,
+    title: document.getElementById("selTitle").value.trim(),
+    desc: document.getElementById("selDesc").value,
+    color: selectedColor,
+    theme: panelTheme
+  }}, "*");
+  markClean();
+}
+
+function clearDesc() { document.getElementById("selTitle").value = ""; document.getElementById("selDesc").value = ""; }
+
+function focusCurrentNode() {
+  if (!currentNodeId) return;
+  parent.postMessage({ pluginMessage: { type: "select-node", nodeId: currentNodeId } }, "*");
+}
+
+function deleteDesc() {
+  if (!currentNodeId) return;
+  var t = I18N[currentLang];
+  if (!confirm(t.confirm_delete || "Delete this annotation?")) return;
+  parent.postMessage({ pluginMessage: { type: "delete-spec", nodeId: currentNodeId } }, "*");
+}
+
+function updateDeleteBtn(hasAnnotation) {
+  var btn = document.getElementById("btnDelete");
+  if (btn) btn.style.display = hasAnnotation ? "" : "none";
+}
+
+function deleteFromList(num, targetNodeId) {
+  var t = I18N[currentLang];
+  if (!confirm(t.confirm_delete || "Delete this annotation?")) return;
+  parent.postMessage({ pluginMessage: { type: "delete-spec", nodeId: targetNodeId, num: num } }, "*");
+}
+
+function insertTag(tag) {
+  var ta = document.getElementById("selDesc"), val = ta.value, start = ta.selectionStart;
+  var prefix = (start > 0 && val[start - 1] !== "\n") ? "\n" : "";
+  ta.value = val.substring(0, start) + prefix + tag + val.substring(start);
+  ta.focus();
+  var newPos = start + prefix.length + tag.length;
+  ta.setSelectionRange(newPos, newPos);
+  markDirty();
+}
+
+// ──────────────────────────────────────
+// Onboarding
+// ──────────────────────────────────────
+var obSlide = 0;
+var OB_TOTAL = 4;
+
+function showOnboarding() {
+  obSlide = 0;
+  updateSlide();
+  document.getElementById("obOverlay").classList.add("show");
+}
+
+function closeOnboarding() {
+  document.getElementById("obOverlay").classList.remove("show");
+}
+
+function nextSlide() {
+  if (obSlide >= OB_TOTAL - 1) { closeOnboarding(); return; }
+  obSlide++;
+  updateSlide();
+}
+
+function updateSlide() {
+  for (var i = 0; i < OB_TOTAL; i++) {
+    document.getElementById("ob-slide-" + i).classList.toggle("active", i === obSlide);
+  }
+  var dots = document.getElementById("obDots").children;
+  for (var i = 0; i < dots.length; i++) {
+    dots[i].classList.toggle("active", i === obSlide);
+  }
+  var t = I18N[currentLang];
+  var nb = document.getElementById("obNextBtn");
+  nb.textContent = obSlide >= OB_TOTAL - 1 ? (t.ob_done || "Got it") : (t.ob_next || "Next");
+}
+
+window.onmessage = function(e) {
+  var msg = e.data.pluginMessage;
+  if (!msg) return;
+  if (msg.type === "init-done") {
+    figmaFileKey = msg.fileKey || "";
+    if (msg.theme) { panelTheme = msg.theme; updateThemeBtn(); }
+    initPalette(); applyLang();
+  }
+  if (msg.type === "selection-empty") {
+    document.getElementById("selEmpty").style.display = "flex";
+    document.getElementById("selContent").style.display = "none";
+    currentNodeId = null;
+    updateDeleteBtn(false);
+  }
+  if (msg.type === "selection-desc") {
+    showSelContent(msg.nodeName, msg.nodeType + "\u200a\u00b7\u200a" + msg.nodeId, msg.title, msg.desc);
+    currentNodeId = msg.nodeId;
+    if (msg.color) { selectedColor = msg.color; pickColor(msg.color); }
+    document.getElementById("nodeBadge").style.background = msg.color || selectedColor || "#F24E1E";
+  }
+  if (msg.type === "specs-listed") renderSpecList(msg.specs || []);
+  if (msg.type === "batch-done" || msg.type === "write-success") parent.postMessage({ pluginMessage: { type: "list-specs" } }, "*");
+  if (msg.type === "delete-done") {
+    clearDesc();
+    updateDeleteBtn(false);
+    parent.postMessage({ pluginMessage: { type: "list-specs" } }, "*");
+  }
+  if (msg.type === "rebuild-done") {
+    parent.postMessage({ pluginMessage: { type: "list-specs" } }, "*");
+  }
+  if (msg.type === "page-changed") {
+    // 페이지 이동 시 Annotations 탭 자동 갱신
+    parent.postMessage({ pluginMessage: { type: "list-specs" } }, "*");
+  }
+};
+parent.postMessage({ pluginMessage: { type: "init" } }, "*");
+
+// Cmd+S / Ctrl+S 단축키로 저장
+document.addEventListener("keydown", function(e) {
+  if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+    e.preventDefault();
+    if (currentNodeId && !document.getElementById("btnSave").classList.contains("btn-muted")) {
+      saveDesc();
+    }
+  }
+});
+</script>
