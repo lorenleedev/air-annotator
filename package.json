@@ -1,0 +1,20 @@
+{
+  "name": "air-annotator",
+  "version": "1.0.0",
+  "description": "AIR: AI-Readable Annotator Figma Plugin",
+  "main": "code.js",
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "test": "node test.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@figma/plugin-typings": "^1.123.0",
+    "esbuild": "^0.27.3",
+    "typescript": "^5.9.3"
+  }
+}

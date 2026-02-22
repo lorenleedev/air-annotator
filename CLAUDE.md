@@ -8,17 +8,27 @@ AIR (AI-Readable Annotator) is a **Figma plugin** that lets designers annotate U
 
 ## Commands
 
-- **Run tests:** `node test.js`
-- **No build step.** The plugin is plain JS/HTML loaded directly by Figma's plugin runtime.
+- **Build:** `npm run build` — compiles `src/code.ts` → `code.js` via esbuild (IIFE format)
+- **Watch:** `npm run watch` — rebuild on file changes
+- **Type check:** `npm run typecheck` — runs `tsc --noEmit` with strict mode
+- **Run tests:** `npm test` — runs `node test.js`
 
 ## Architecture
 
 ### Two-thread Figma plugin model
 
-- **`code.js`** — Runs in Figma's sandbox (main thread). Has access to the Figma document API (`figma.*`). Creates/reads/deletes nodes on the canvas.
+- **`src/code.ts`** — TypeScript source for Figma's sandbox (main thread). Has access to the Figma document API (`figma.*`). Creates/reads/deletes nodes on the canvas. Compiled to `code.js` by esbuild.
+- **`code.js`** — Build output (IIFE bundle). Referenced by `manifest.json`. Do not edit directly.
 - **`ui.html`** — Plugin UI (iframe). Contains all HTML, CSS, and client-side JS in a single file. No framework; vanilla JS.
 - **Communication:** `figma.ui.postMessage()` (code→UI) and `parent.postMessage({ pluginMessage: ... })` (UI→code). Message types are string-keyed (e.g., `"write-desc"`, `"list-specs"`, `"delete-spec"`).
 - **`manifest.json`** — Figma plugin manifest. `editorType: ["figma"]`, no network access, `documentAccess: "dynamic-page"`.
+
+### Build pipeline
+
+- **Source:** `src/code.ts` (single file, no splitting)
+- **Bundler:** esbuild (`esbuild.mjs`) — IIFE format, ES2015 target, UTF-8 charset
+- **Type checking:** `tsc --noEmit` with `strict: true`, types from `@figma/plugin-typings`
+- **Output:** `code.js` (root directory, referenced by `manifest.json`)
 
 ### Data model
 
@@ -53,11 +63,12 @@ The plugin was renamed from "Spec" to "Annotation". All code that reads panel na
 
 ## Key Conventions
 
-- **No ES6+.** The codebase uses `var`, `function`, and `for` loops throughout (Figma plugin sandbox compatibility). Maintain this style.
-- **Font loading** tries Inter → Roboto → Arial in order. `FONT_R`/`FONT_B` are set once at init.
+- **TypeScript with `strict: true`.** Source lives in `src/code.ts`. Uses `let`/`const`, `function` keyword, and `for` loops (no arrow functions, no `.map`/`.filter`). Types from `@figma/plugin-typings` for Figma API.
+- **Single file.** All plugin logic stays in `src/code.ts` — do not split into modules.
+- **Font loading** tries Inter → Roboto → Arial in order. `FONT_R`/`FONT_B` are `FontName | undefined`, set once at init.
 - **Panel width** is fixed at `PANEL_W = 360`. Gap from target is `PANEL_GAP = 60`.
 - **Numbering** is global per page, auto-incrementing from the max existing number. Cached in page `pluginData("airMaxNum")`.
 
 ## Testing
 
-Tests (`test.js`) mock the Figma API and test pure logic: tag parsing, numbering, hidden data read/write, layer scanning/filtering, migration compatibility, syntax validation, and UI text consistency. Run with `node test.js` — no dependencies needed.
+Tests (`test.js`) mock the Figma API and test pure logic: tag parsing, numbering, hidden data read/write, layer scanning/filtering, migration compatibility, syntax validation, and UI text consistency. Tests read the built `code.js` for string checks (suites 10-12). Run with `npm test` — no test framework needed.
