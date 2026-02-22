@@ -87,6 +87,7 @@ var figma = {
   createFrame: function() { return mockNode({ type: "FRAME" }); },
   createText: function() { return mockNode({ type: "TEXT", textAutoResize: "WIDTH_AND_HEIGHT" }); },
   getNodeById: function(id) { return _allNodes[id] || null; },
+  getNodeByIdAsync: function(id) { return Promise.resolve(_allNodes[id] || null); },
   loadFontAsync: function() { return Promise.resolve(); },
   notify: function(msg) { _notifications.push(msg); },
   on: function() {},
