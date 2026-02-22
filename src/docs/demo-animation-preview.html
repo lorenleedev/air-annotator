@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>AIR: AI-Readable Annotator</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#111;font-family:Inter,sans-serif;display:flex;flex-direction:column;align-items:center;padding:40px 20px;color:#fff;min-height:100vh}
+:root{--bg:#2c2c2c;--bg2:#383838;--border:rgba(255,255,255,.1);--border2:rgba(255,255,255,.2);--t1:rgba(255,255,255,.9);--t2:rgba(255,255,255,.5);--t3:rgba(255,255,255,.3);--brand:#0c8ce9}
+
+h1{font-size:13px;font-weight:600;color:rgba(255,255,255,.3);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px}
+.subtitle{font-size:11px;color:rgba(255,255,255,.2);margin-bottom:32px}
+.stage{display:flex;gap:24px;align-items:flex-start;position:relative}
+
+/* ─── Figma Canvas ─── */
+.canvas{width:540px;height:500px;background:#1e1e1e;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,.06);position:relative;transition:opacity 0.5s}
+.canvas-toolbar{height:32px;background:#2c2c2c;border-bottom:1px solid rgba(255,255,255,.06);display:flex;align-items:center;padding:0 12px;gap:8px}
+.canvas-toolbar .dot{width:8px;height:8px;border-radius:50%}
+.canvas-area{position:relative;width:100%;height:calc(100% - 32px);overflow:hidden}
+.mock-frame{position:absolute;border:1px solid rgba(255,255,255,.08);border-radius:4px;background:rgba(255,255,255,.02);transition:all 0.3s}
+.mock-frame.selected{border-color:var(--brand);box-shadow:0 0 0 1px var(--brand)}
+.mock-frame .label{position:absolute;top:-16px;left:0;font-size:9px;color:var(--t3);white-space:nowrap}
+.mock-frame.selected .label{color:var(--brand)}
+.mock-row{position:absolute;background:rgba(255,255,255,.03);border-radius:2px}
+
+/* Canvas Spec Panel — new tag pill design */
+.canvas-panel{position:absolute;right:16px;top:30px;width:210px;background:#fff;border-radius:8px;box-shadow:0 2px 16px rgba(0,0,0,.35);opacity:0;transform:translateX(12px);transition:all 0.5s ease;overflow:hidden}
+.canvas-panel.show{opacity:1;transform:translateX(0)}
+.cp-header{padding:8px 10px 6px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;gap:6px}
+.cp-badge{width:22px;height:16px;border-radius:4px;background:#F24E1E;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff;flex-shrink:0}
+.cp-dots{display:flex;gap:2px}
+.cp-dots span{width:4px;height:4px;border-radius:50%;background:#ccc}
+.cp-header-text{font-size:7.5px;color:#999;font-weight:500}
+.cp-desc{margin:6px 8px;padding:6px 8px;background:#f5f5f5;border-radius:4px;font-size:7px;color:#666;line-height:1.5;opacity:0;transform:translateY(4px);transition:all 0.3s ease}
+.cp-desc.show{opacity:1;transform:translateY(0)}
+.cp-body{padding:4px 8px 6px}
+.cp-row{display:flex;align-items:center;gap:5px;padding:3px 0;opacity:0;transform:translateY(4px);transition:all 0.3s ease}
+.cp-row.show{opacity:1;transform:translateY(0)}
+.cp-pill{padding:1.5px 5px;border-radius:3px;font-size:6.5px;font-weight:700;text-transform:uppercase;flex-shrink:0;letter-spacing:.3px}
+.cp-pill-route{background:#E3F2FD;color:#1565C0}
+.cp-pill-auth{background:#E8F5E9;color:#2E7D32}
+.cp-pill-api{background:#FFF3E0;color:#E65100}
+.cp-pill-ux{background:#FFF3E0;color:#E65100}
+.cp-pill-warn{background:#FFEBEE;color:#C62828}
+.cp-pill-desc{background:#E3F2FD;color:#1565C0}
+.cp-pill-memo{background:#F1F8E9;color:#558B2F}
+.cp-val{font-size:7px;color:#333;font-family:'SF Mono',Consolas,monospace}
+.cp-footer{padding:5px 8px;border-top:1px solid #f0f0f0;font-size:6px;color:#bbb}
+.canvas-marker{position:absolute;width:20px;height:14px;border-radius:4px;background:#F24E1E;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff;opacity:0;transform:scale(0);transition:all 0.3s ease}
+.canvas-marker.show{opacity:1;transform:scale(1)}
+
+/* ─── Plugin ─── */
+.plugin{width:340px;border-radius:8px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.06);flex-shrink:0;transition:opacity 0.5s;display:flex;flex-direction:column}
+.titlebar{background:#383838;padding:7px 12px;display:flex;align-items:center;gap:6px;border-bottom:1px solid rgba(255,255,255,.06)}
+.titlebar-icon{width:20px;height:20px;border-radius:4px;background:var(--brand);display:flex;align-items:center;justify-content:center}
+.titlebar-icon svg{width:12px;height:12px}
+.titlebar-text{font-size:11px;font-weight:500;color:rgba(255,255,255,.7);flex:1}
+.titlebar-x{color:var(--t3);font-size:14px;cursor:pointer}
+.p-body{background:var(--bg);min-height:460px;position:relative;overflow:hidden;flex:1}
+.p-screen{position:absolute;inset:0;opacity:0;transition:opacity 0.4s;pointer-events:none;display:flex;flex-direction:column}
+.p-screen.active{opacity:1;pointer-events:auto}
+
+/* Hero Banner */
+.hero-banner{position:relative;overflow:hidden;padding:12px 16px 10px 12px;background:#0d0d0d;border-bottom:1px solid rgba(255,255,255,.06)}
+.hero-deco{position:absolute;top:0;right:0;width:4px;bottom:0;display:flex;flex-direction:column}
+.hero-block{flex:1}
+.hero-block.b1{background:#F24E1E}
+.hero-block.b2{background:#FF7262}
+.hero-block.b3{background:#A259FF}
+.hero-block.b4{background:#1ABCFE}
+.hero-block.b5{background:#0ACF83}
+.hero-content{position:relative;z-index:1}
+.hero-top-row{position:relative;z-index:1;display:flex;align-items:center;justify-content:flex-end;margin-bottom:0}
+.hero-help-btn{width:18px;height:18px;border-radius:50%;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.04);color:rgba(255,255,255,.35);font-size:10px;font-weight:600;display:flex;align-items:center;justify-content:center}
+.hero-brand{margin-bottom:2px}
+.hero-brand-main{font-size:16px;font-weight:800;line-height:1.2;color:#fff;letter-spacing:-0.3px}
+.hero-bottom-row{display:flex;align-items:flex-end;justify-content:space-between;margin-top:2px}
+.hero-sub{font-size:9.5px;color:rgba(255,255,255,.35)}
+.hero-made-by{font-size:8.5px;color:rgba(255,255,255,.25);letter-spacing:0.2px;white-space:nowrap}
+.hero-made-by b{color:rgba(255,255,255,.4);font-weight:600}
+
+/* Shared */
+.seg-wrap{padding:4px 14px 0;display:flex;align-items:center;gap:6px}
+.seg{flex:1;display:flex;background:var(--bg2);border-radius:6px;padding:2px;gap:1px}
+.seg-btn{flex:1;padding:5px 0;text-align:center;color:var(--t2);font-weight:600;font-size:11px;border-radius:4px;border:none;background:none}
+.seg-btn.active{color:var(--t1);background:var(--bg);box-shadow:0 0 0 1px var(--border),0 1px 2px rgba(0,0,0,.2)}
+.p-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:10px}
+.p-empty p{font-size:11px;color:var(--t3)}
+.p-edit{padding:6px 14px 10px;overflow-y:auto;flex:1}
+.node-info{display:flex;align-items:center;gap:8px;padding:4px 0 6px}
+.node-badge{width:28px;height:20px;border-radius:5px;background:#F24E1E;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;flex-shrink:0}
+.node-name{font-weight:600;font-size:11px;color:var(--t1)}
+.node-meta{font-size:10px;color:var(--t3);font-family:'SF Mono',Consolas,monospace;margin-top:1px}
+.node-goto{margin-left:auto;color:var(--t3);flex-shrink:0}
+.divider{height:1px;background:var(--border);margin:6px 0}
+.field{margin-bottom:8px}
+.field-label{font-size:11px;color:var(--t2);margin-bottom:4px;font-weight:500}
+.f-input{width:100%;border:1px solid var(--border2);border-radius:6px;padding:6px 8px;font-size:11px;background:var(--bg);color:var(--t1);font-family:Inter,sans-serif;outline:none}
+.f-input::placeholder{color:var(--t3)}
+.color-row{display:flex;gap:4px}
+.cd{width:18px;height:18px;border-radius:5px;border:1.5px solid transparent}
+.cd.sel{border-color:#fff;box-shadow:0 0 0 1px rgba(255,255,255,.3)}
+.cc{width:18px;height:18px;border-radius:5px;border:1px dashed var(--border2);display:flex;align-items:center;justify-content:center;color:var(--t3);font-size:9px}
+.chip-row{display:flex;gap:3px;flex-wrap:wrap;margin-bottom:6px}
+.chip{padding:3px 7px;border-radius:4px;background:var(--bg2);font-size:10px;font-weight:500;color:var(--t2);border:none;transition:all 0.2s}
+.chip.flash{background:rgba(12,140,233,.2);color:var(--brand)}
+.f-ta{width:100%;border:1px solid var(--border2);border-radius:6px;padding:6px 8px;font-family:'SF Mono',Consolas,monospace;font-size:10.5px;min-height:80px;line-height:1.7;background:var(--bg);color:var(--t1);resize:none;outline:none}
+.btn-row{display:flex;gap:6px;margin-top:4px}
+.btn{padding:6px 16px;border:none;border-radius:6px;font-size:11px;font-weight:600;text-align:center;transition:all 0.15s}
+.btn-brand{background:var(--brand);color:#fff}
+.btn-brand.pulse{filter:brightness(1.4);transform:scale(1.02)}
+.btn-delete{background:rgba(244,63,94,.12);color:#F43F5E}
+.toast{position:absolute;bottom:40px;left:50%;transform:translateX(-50%) translateY(20px);padding:6px 14px;border-radius:6px;font-size:10px;font-weight:600;opacity:0;transition:all 0.3s;white-space:nowrap;z-index:10;background:#059669;color:#fff}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* Plugin footer */
+.p-footer{background:var(--bg2);border-top:1px solid rgba(255,255,255,.06);padding:6px 12px;display:flex;align-items:center;gap:8px;font-size:9px;color:var(--t3)}
+.p-footer-btn{display:flex;align-items:center;gap:3px;background:none;border:1px solid var(--border);border-radius:4px;padding:2px 6px;color:var(--t3);font-size:9px;font-weight:500;cursor:pointer}
+.p-footer-btn svg{width:12px;height:12px}
+.p-footer-credit{margin-left:auto;font-size:8.5px;color:var(--t3)}
+
+/* ─── Step 5: AI Showcase ─── */
+.ai-showcase{position:absolute;inset:0;display:flex;gap:20px;opacity:0;transition:opacity 0.5s;pointer-events:none}
+.ai-showcase.show{opacity:1;pointer-events:auto}
+
+/* Link bar */
+.link-bar{position:absolute;top:-44px;left:50%;transform:translateX(-50%);background:var(--bg2);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 16px;display:flex;align-items:center;gap:8px;opacity:0;transition:all 0.4s;white-space:nowrap}
+.link-bar.show{opacity:1}
+.link-bar .figma-icon{width:16px;height:16px;background:#1e1e1e;border-radius:3px;display:flex;align-items:center;justify-content:center}
+.link-bar .figma-icon svg{width:10px;height:10px}
+.link-bar .url{font-family:'SF Mono',Consolas,monospace;font-size:10px;color:var(--brand)}
+.link-bar .arrow{color:var(--t3);font-size:14px;margin:0 2px}
+
+/* Before / After */
+.ba-wrap{width:440px;display:flex;flex-direction:column;gap:10px}
+.ba-card{background:#1a1a1a;border-radius:8px;border:1px solid rgba(255,255,255,.06);padding:12px;opacity:0;transform:translateY(8px);transition:all 0.4s ease;display:flex;flex-direction:column;gap:8px}
+.ba-card.show{opacity:1;transform:translateY(0)}
+.ba-label{font-size:9px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;display:flex;align-items:center;gap:6px}
+.ba-label.before{color:#F43F5E}
+.ba-label.after{color:#059669}
+.ba-label .badge{padding:2px 6px;border-radius:3px;font-size:8px;font-weight:700}
+.ba-label.before .badge{background:rgba(244,63,94,.15);color:#F43F5E}
+.ba-label.after .badge{background:rgba(5,150,105,.15);color:#059669}
+
+.ai-sees{background:#0d0d0d;border:1px solid rgba(255,255,255,.06);border-radius:6px;padding:8px 10px;font-family:'SF Mono',Consolas,monospace;font-size:8.5px;line-height:1.8;color:var(--t3)}
+.ai-sees .dim{color:rgba(255,255,255,.15)}
+.ai-sees .node{color:var(--t2)}
+.ai-sees .ann{color:#7ee787}
+
+.ai-response{border-radius:6px;padding:8px 10px;font-size:9.5px;line-height:1.6}
+.ai-resp-bad{background:rgba(244,63,94,.05);border:1px solid rgba(244,63,94,.12);color:var(--t3)}
+.ai-resp-good{background:rgba(5,150,105,.06);border:1px solid rgba(5,150,105,.15);color:var(--t1)}
+.ai-resp-good .hl{color:#059669;font-weight:600}
+.ai-resp-good .warn-text{color:#F97316;font-weight:500}
+
+/* Claude Chat */
+.claude-wrap{width:440px;display:flex;flex-direction:column;gap:8px}
+.claude-window{background:#1a1a1a;border-radius:8px;border:1px solid rgba(255,255,255,.06);overflow:hidden;opacity:0;transform:translateY(8px);transition:all 0.4s ease}
+.claude-window.show{opacity:1;transform:translateY(0)}
+.claude-toolbar{background:var(--bg2);padding:7px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid rgba(255,255,255,.06)}
+.claude-logo{width:18px;height:18px;border-radius:4px;background:linear-gradient(135deg,#D97706,#B45309);display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff;font-weight:700}
+.claude-toolbar-text{font-size:11px;font-weight:500;color:var(--t2)}
+.claude-body{padding:12px;display:flex;flex-direction:column;gap:8px}
+
+.chat-bubble{padding:8px 10px;border-radius:8px;font-size:10px;line-height:1.6;max-width:95%;opacity:0;transform:translateY(6px);transition:all 0.3s ease}
+.chat-bubble.show{opacity:1;transform:translateY(0)}
+.chat-user{background:var(--bg2);color:var(--t1);align-self:flex-end;border-bottom-right-radius:2px}
+.chat-user .link{color:var(--brand);text-decoration:underline;font-family:'SF Mono',Consolas,monospace;font-size:9px}
+.chat-ai{background:rgba(12,140,233,.06);border:1px solid rgba(12,140,233,.1);color:var(--t1);align-self:flex-start;border-bottom-left-radius:2px}
+.chat-ai .ref{color:var(--brand);font-weight:600;font-family:'SF Mono',Consolas,monospace;font-size:9px}
+.chat-ai .insight{color:#7ee787}
+
+/* MCP block */
+.mcp-block{background:#0d0d0d;border:1px solid rgba(255,255,255,.06);border-radius:6px;padding:8px 10px;font-family:'SF Mono',Consolas,monospace;font-size:8.5px;line-height:1.8;color:var(--t3);opacity:0;transition:opacity 0.3s}
+.mcp-block.show{opacity:1}
+.mcp-block .prompt{color:#059669}
+.mcp-block .cmd{color:var(--t1)}
+.mcp-block .output{color:var(--t2)}
+.mcp-block .ann-ref{color:#7ee787}
+.mcp-block .success{color:#059669;font-weight:600}
+
+.resp-line{opacity:0;transition:opacity 0.2s}
+.resp-line.show{opacity:1}
+
+/* ─── Steps ─── */
+.steps{display:flex;gap:0;margin-top:32px}
+.step{display:flex;flex-direction:column;align-items:center;gap:6px;width:140px;position:relative}
+.step-num{width:28px;height:28px;border-radius:50%;background:var(--bg2);border:2px solid var(--border2);color:var(--t3);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;transition:all 0.3s;z-index:1}
+.step.active .step-num{background:var(--brand);border-color:var(--brand);color:#fff}
+.step.done .step-num{background:#059669;border-color:#059669;color:#fff}
+.step-label{font-size:10px;color:var(--t3);text-align:center;transition:color 0.3s}
+.step.active .step-label{color:var(--t1);font-weight:600}
+.step.done .step-label{color:var(--t2)}
+.step-line{position:absolute;top:14px;left:calc(50% + 20px);width:calc(100% - 40px);height:2px;background:var(--border2);transition:background 0.3s}
+.step:last-child .step-line{display:none}
+.step.done .step-line{background:#059669}
+.step.active-ai .step-num{background:#D97706;border-color:#D97706;color:#fff;box-shadow:0 0 12px rgba(217,119,6,.3)}
+.step.active-ai .step-label{color:#FBBF24;font-weight:600}
+</style></head>
+<body>
+
+<h1>AIR: AI-Readable Annotator</h1>
+<div class="subtitle">Annotate once → AI understands your design</div>
+
+<div class="stage">
+  <!-- ─── Figma Canvas ─── -->
+  <div class="canvas" id="mainCanvas">
+    <div class="canvas-toolbar"><div class="dot" style="background:#ff5f57"></div><div class="dot" style="background:#ffbd2e"></div><div class="dot" style="background:#28c840"></div></div>
+    <div class="canvas-area">
+      <div class="mock-frame" id="cf1" style="left:30px;top:24px;width:260px;height:200px"><div class="label">Sign Up Form</div></div>
+      <div class="mock-row" style="left:50px;top:48px;width:80px;height:8px;background:rgba(255,255,255,.08);border-radius:2px"></div>
+      <div class="mock-row" style="left:50px;top:62px;width:220px;height:26px;border:1px solid rgba(255,255,255,.08);border-radius:3px"></div>
+      <div class="mock-row" style="left:50px;top:100px;width:80px;height:8px;background:rgba(255,255,255,.08);border-radius:2px"></div>
+      <div class="mock-row" style="left:50px;top:114px;width:220px;height:26px;border:1px solid rgba(255,255,255,.08);border-radius:3px"></div>
+      <div class="mock-row" style="left:50px;top:152px;width:80px;height:8px;background:rgba(255,255,255,.08);border-radius:2px"></div>
+      <div class="mock-row" style="left:50px;top:166px;width:220px;height:26px;border:1px solid rgba(255,255,255,.08);border-radius:3px"></div>
+      <div class="mock-frame" style="left:30px;top:254px;width:120px;height:28px"><div class="label">Terms Checkbox</div></div>
+      <div class="mock-frame" style="left:170px;top:254px;width:120px;height:36px"><div class="label">Submit Button</div></div>
+      <div class="canvas-marker" id="cm1" style="left:32px;top:26px">1</div>
+      <div class="canvas-panel" id="cpanel">
+        <div class="cp-header">
+          <div class="cp-badge">1</div>
+          <div class="cp-dots"><span></span><span></span><span></span></div>
+          <div class="cp-header-text">AIR Annotation · FRAME</div>
+        </div>
+        <div class="cp-desc" id="cpl-1">User registration with email verify</div>
+        <div class="cp-body">
+          <div class="cp-row" id="cpl-2"><span class="cp-pill cp-pill-route">ROUTE</span><span class="cp-val">/signup</span></div>
+          <div class="cp-row" id="cpl-3"><span class="cp-pill cp-pill-auth">AUTH</span><span class="cp-val">public</span></div>
+          <div class="cp-row" id="cpl-4"><span class="cp-pill cp-pill-api">API</span><span class="cp-val">POST /api/users</span></div>
+          <div class="cp-row" id="cpl-5"><span class="cp-pill cp-pill-warn">WARN</span><span class="cp-val">Rate limit 5 req/min</span></div>
+        </div>
+        <div class="cp-footer">AIR: AI-Readable Annotator · Do not edit directly</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Plugin ─── -->
+  <div class="plugin" id="mainPlugin">
+    <div class="titlebar"><div class="titlebar-icon"><svg viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round"><path d="M5.5 4L2.5 8l3 4"/><path d="M10.5 4l3 4-3 4"/></svg></div><div class="titlebar-text">AIR: AI-Readable Annotator</div><span class="titlebar-x">×</span></div>
+    <div class="p-body">
+      <div class="p-screen active" id="screen-empty">
+        <div class="hero-banner">
+          <div class="hero-deco"><div class="hero-block b1"></div><div class="hero-block b2"></div><div class="hero-block b3"></div><div class="hero-block b4"></div><div class="hero-block b5"></div></div>
+          <div class="hero-top-row"><div class="hero-help-btn">?</div></div>
+          <div class="hero-content"><div class="hero-brand"><span class="hero-brand-main">Make Figma<br>AI-Readable</span></div><div class="hero-bottom-row"><span class="hero-sub">Annotate layers, share the Figma link with AI.</span><span class="hero-made-by">Made by <b>은결</b></span></div></div>
+        </div>
+        <div class="seg-wrap"><div class="seg"><div class="seg-btn active">Edit</div><div class="seg-btn">Annotations</div></div></div>
+        <div class="p-empty"><svg width="32" height="32" viewBox="0 0 32 32" fill="none"><rect x="6" y="6" width="20" height="20" rx="4" stroke="rgba(255,255,255,.2)" stroke-width="1.5" fill="none"/><path d="M16 12v8M12 16h8" stroke="rgba(255,255,255,.2)" stroke-width="1.5" stroke-linecap="round"/></svg><p>Select a layer to annotate</p></div>
+      </div>
+      <div class="p-screen" id="screen-edit">
+        <div class="hero-banner">
+          <div class="hero-deco"><div class="hero-block b1"></div><div class="hero-block b2"></div><div class="hero-block b3"></div><div class="hero-block b4"></div><div class="hero-block b5"></div></div>
+          <div class="hero-top-row"><div class="hero-help-btn">?</div></div>
+          <div class="hero-content"><div class="hero-brand"><span class="hero-brand-main">Make Figma<br>AI-Readable</span></div><div class="hero-bottom-row"><span class="hero-sub">Annotate layers, share the Figma link with AI.</span><span class="hero-made-by">Made by <b>은결</b></span></div></div>
+        </div>
+        <div class="seg-wrap"><div class="seg"><div class="seg-btn active">Edit</div><div class="seg-btn">Annotations</div></div></div>
+        <div class="p-edit">
+          <div class="node-info">
+            <div class="node-badge">1</div>
+            <div><div class="node-name">Sign Up Form</div><div class="node-meta">FRAME · 312:847</div></div>
+            <svg class="node-goto" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="rgba(255,255,255,.3)" stroke-width="1.3" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><line x1="7" y1="1" x2="7" y2="3"/><line x1="7" y1="11" x2="7" y2="13"/><line x1="1" y1="7" x2="3" y2="7"/><line x1="11" y1="7" x2="13" y2="7"/></svg>
+          </div>
+          <div class="field"><div class="field-label">Tag Color</div><div class="color-row"><div class="cd sel" style="background:#F24E1E"></div><div class="cd" style="background:#FF7262"></div><div class="cd" style="background:#A259FF"></div><div class="cd" style="background:#1ABCFE"></div><div class="cd" style="background:#0ACF83"></div><div class="cd" style="background:#0D0D0D"></div><div class="cc">+</div></div></div>
+          <div class="field"><div class="field-label">Title</div><input class="f-input" id="anim-title" value="" placeholder="e.g. Sign Up Button, Nav Bar..." readonly /></div>
+          <div class="field"><div class="field-label">Properties</div>
+            <div class="chip-row"><div class="chip" id="chip-route">Route</div><div class="chip" id="chip-auth">Auth</div><div class="chip" id="chip-desc">Desc</div><div class="chip" id="chip-warn">Warn</div><div class="chip" id="chip-memo">Memo</div><div class="chip" id="chip-ux">UX</div><div class="chip" id="chip-api">API</div></div>
+            <textarea class="f-ta" id="anim-ta" readonly></textarea>
+          </div>
+          <div class="btn-row"><div class="btn btn-brand" id="anim-save">Save</div><div class="btn btn-delete">Delete</div></div>
+        </div>
+        <div class="toast" id="toast-save">✅ Saved</div>
+      </div>
+    </div>
+    <div class="p-footer">
+      <div class="p-footer-btn"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="8" cy="8" r="6.5"/><path d="M1.5 8h13M8 1.5c-2 2.5-2 9.5 0 13M8 1.5c2 2.5 2 9.5 0 13"/></svg>EN</div>
+      <div class="p-footer-btn"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="8" cy="8" r="3.5"/><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></svg>Light</div>
+      <div class="p-footer-credit">AIR: AI-Readable Annotator</div>
+    </div>
+  </div>
+
+  <!-- ─── Step 5: AI Showcase ─── -->
+  <div class="ai-showcase" id="aiShowcase">
+    <!-- Figma link bar -->
+    <div class="link-bar" id="linkBar">
+      <div class="figma-icon"><svg viewBox="0 0 12 12" fill="none"><rect x="2" y="2" width="8" height="8" rx="1.5" stroke="#fff" stroke-width="1" fill="none"/></svg></div>
+      <span class="url">figma.com/design/Kx8f3…</span>
+      <span class="arrow">→</span>
+      <span style="font-size:10px;color:var(--t1);font-weight:600">AI</span>
+    </div>
+
+    <!-- Left: Before / After -->
+    <div class="ba-wrap">
+      <div class="ba-card" id="ba-before">
+        <div class="ba-label before"><span class="badge">BEFORE</span> What AI sees without AIR: AI-Readable Annotator</div>
+        <div class="ai-sees">
+          <div class="resp-line" id="bf-1"><span class="node">FRAME "Frame 48"</span></div>
+          <div class="resp-line" id="bf-2"><span class="dim">&nbsp;&nbsp;├ FRAME "Frame 12"</span></div>
+          <div class="resp-line" id="bf-3"><span class="dim">&nbsp;&nbsp;├ FRAME "Frame 13"</span></div>
+          <div class="resp-line" id="bf-4"><span class="dim">&nbsp;&nbsp;├ INSTANCE "Frame 14"</span></div>
+          <div class="resp-line" id="bf-5"><span class="dim">&nbsp;&nbsp;├ RECTANGLE "Rectangle 7"</span></div>
+          <div class="resp-line" id="bf-6"><span class="dim">&nbsp;&nbsp;└ ... 43 more layers</span></div>
+        </div>
+        <div class="ai-response ai-resp-bad">
+          <div class="resp-line" id="bfr-1">🤷 AI: "I see <b>unnamed frames</b> and rectangles,</div>
+          <div class="resp-line" id="bfr-2">but can't tell the <b>route, auth, API,</b></div>
+          <div class="resp-line" id="bfr-3">or <b>business rules</b> behind this UI."</div>
+        </div>
+      </div>
+
+      <div class="ba-card" id="ba-after">
+        <div class="ba-label after"><span class="badge">AFTER</span> With AIR: AI-Readable Annotator</div>
+        <div class="ai-sees">
+          <div class="resp-line" id="af-1"><span class="node">[1] Sign Up Form</span></div>
+          <div class="resp-line" id="af-2"><span class="ann">&nbsp;&nbsp;[route] /signup</span></div>
+          <div class="resp-line" id="af-3"><span class="ann">&nbsp;&nbsp;[auth]  public</span></div>
+          <div class="resp-line" id="af-4"><span class="ann">&nbsp;&nbsp;[api]   POST /api/users</span></div>
+          <div class="resp-line" id="af-5"><span class="ann">&nbsp;&nbsp;[warn]  Rate limit 5 req/min</span></div>
+          <div class="resp-line" id="af-6"><span class="node">[2] Terms Checkbox</span></div>
+          <div class="resp-line" id="af-7"><span class="ann">&nbsp;&nbsp;[ux]    Must agree to terms</span></div>
+        </div>
+        <div class="ai-response ai-resp-good">
+          <div class="resp-line" id="afr-1">🧠 AI: "This is a <span class="hl">public sign-up form</span> at</div>
+          <div class="resp-line" id="afr-2"><span class="hl">/signup</span>, fetching via <span class="hl">POST /api/users</span>.</div>
+          <div class="resp-line" id="afr-3">Terms must be accepted. <span class="warn-text">⚠️ Rate limited</span></div>
+          <div class="resp-line" id="afr-4"><span class="warn-text">to 5 req/min.</span> Generating code..."</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Claude Chat + MCP -->
+    <div class="claude-wrap">
+      <div class="claude-window" id="claude-win">
+        <div class="claude-toolbar">
+          <div class="claude-logo">C</div>
+          <div class="claude-toolbar-text">Claude</div>
+        </div>
+        <div class="claude-body">
+          <div class="chat-bubble chat-user" id="chat-1">
+            Build the React component for this page<br>
+            <span class="link">figma.com/design/Kx8f3…?node-id=312-847</span>
+          </div>
+          <div class="chat-bubble chat-ai" id="chat-2">
+            <div class="resp-line" id="cr-1">Reading Figma via MCP...</div>
+          </div>
+          <div class="mcp-block" id="mcp-block">
+            <div class="resp-line" id="mcp-1"><span class="prompt">›</span> <span class="cmd">figma.get_metadata(312:847)</span></div>
+            <div class="resp-line" id="mcp-2"><span class="output">Found <b style="color:#fff">3</b> annotated layers:</span></div>
+            <div class="resp-line" id="mcp-3"><span class="ann-ref">[1] Sign Up → route, auth, api, warn</span></div>
+            <div class="resp-line" id="mcp-4"><span class="ann-ref">[2] Terms Checkbox → ux (must check)</span></div>
+            <div class="resp-line" id="mcp-5"><span class="ann-ref">[3] Submit Button → api (POST /users)</span></div>
+            <div class="resp-line" id="mcp-6"><span class="success">✓ Design intent extracted</span></div>
+          </div>
+          <div class="chat-bubble chat-ai" id="chat-3">
+            <div class="resp-line" id="cr-2">Generated <span class="ref">SignUpForm.tsx</span> with:</div>
+            <div class="resp-line" id="cr-3">• Route: <span class="insight">/signup</span></div>
+            <div class="resp-line" id="cr-4">• Auth guard: <span class="insight">public</span></div>
+            <div class="resp-line" id="cr-5">• API: <span class="insight">POST /api/users</span> + pagination</div>
+            <div class="resp-line" id="cr-6">• Rule: <span style="color:#F97316">rate limit 5 req/min</span></div>
+            <div class="resp-line" id="cr-7">• UX: <span class="insight">terms checkbox required</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Steps -->
+<div class="steps">
+  <div class="step active" id="step1"><div class="step-num">1</div><div class="step-label">Select layer</div><div class="step-line"></div></div>
+  <div class="step" id="step2"><div class="step-num">2</div><div class="step-label">Annotate</div><div class="step-line"></div></div>
+  <div class="step" id="step3"><div class="step-num">3</div><div class="step-label">Save</div><div class="step-line"></div></div>
+  <div class="step" id="step4"><div class="step-num">4</div><div class="step-label">Panel renders</div><div class="step-line"></div></div>
+  <div class="step" id="step5"><div class="step-num">✦</div><div class="step-label">AI understands</div></div>
+</div>
+
+<script>
+var tagLines=[
+  {chip:"route",text:"[route] /signup"},
+  {chip:"auth",text:"[auth] public"},
+  {chip:"desc",text:"[desc] User registration with email verify"},
+  {chip:"api",text:"[api] POST /api/users"},
+  {chip:"warn",text:"[warn] Rate limit 5 req/min"}
+];
+
+function setStep(n,ai){
+  for(var i=1;i<=5;i++){
+    var el=document.getElementById("step"+i);
+    el.className="step";
+    if(i<n)el.className+=" done";
+    if(i===n)el.className+=ai?" active-ai":" active";
+  }
+}
+function showScreen(id){document.querySelectorAll(".p-screen").forEach(function(s){s.classList.remove("active")});document.getElementById(id).classList.add("active")}
+function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
+async function typeText(el,text,speed){for(var i=0;i<text.length;i++){el.value+=text[i];el.scrollTop=el.scrollHeight;await sleep(speed||30)}}
+function showLines(prefix,start,end,delay){return new Promise(async function(resolve){for(var i=start;i<=end;i++){var el=document.getElementById(prefix+i);if(el){el.classList.add("show");await sleep(delay||150)}}resolve()})}
+function hideLines(prefix,start,end){for(var i=start;i<=end;i++){var el=document.getElementById(prefix+i);if(el)el.classList.remove("show")}}
+
+function resetAll(){
+  document.getElementById("mainCanvas").style.opacity="1";
+  document.getElementById("mainPlugin").style.opacity="1";
+  document.getElementById("aiShowcase").classList.remove("show");
+  document.getElementById("linkBar").classList.remove("show");
+  document.getElementById("cf1").classList.remove("selected");
+  document.getElementById("cm1").classList.remove("show");
+  document.getElementById("cpanel").classList.remove("show");
+  document.getElementById("anim-title").value="";
+  document.getElementById("anim-ta").value="";
+  document.getElementById("anim-save").classList.remove("pulse");
+  document.getElementById("toast-save").classList.remove("show");
+  hideLines("cpl-",1,5);
+  ["ba-before","ba-after","claude-win"].forEach(function(id){document.getElementById(id).classList.remove("show")});
+  document.getElementById("mcp-block").classList.remove("show");
+  hideLines("bf-",1,6);hideLines("bfr-",1,3);
+  hideLines("af-",1,7);hideLines("afr-",1,4);
+  ["chat-1","chat-2","chat-3"].forEach(function(id){document.getElementById(id).classList.remove("show")});
+  hideLines("cr-",1,7);hideLines("mcp-",1,6);
+  showScreen("screen-empty");
+}
+
+async function animate(){
+  resetAll();
+
+  // ── STEP 1 ──
+  setStep(1);
+  await sleep(1200);
+  document.getElementById("cf1").classList.add("selected");
+  await sleep(500);
+  showScreen("screen-edit");
+  await sleep(300);
+
+  // ── STEP 2 ──
+  setStep(2);
+  await sleep(200);
+  await typeText(document.getElementById("anim-title"),"Sign Up Form",40);
+  await sleep(200);
+  var ta=document.getElementById("anim-ta");
+  for(var i=0;i<tagLines.length;i++){
+    var chip=document.getElementById("chip-"+tagLines[i].chip);
+    if(chip)chip.classList.add("flash");
+    await sleep(120);
+    if(i>0)ta.value+="\n";
+    await typeText(ta,tagLines[i].text,15);
+    await sleep(150);
+    if(chip)chip.classList.remove("flash");
+  }
+  await sleep(400);
+
+  // ── STEP 3 ──
+  setStep(3);
+  document.getElementById("anim-save").classList.add("pulse");
+  await sleep(200);
+  document.getElementById("anim-save").classList.remove("pulse");
+  document.getElementById("toast-save").classList.add("show");
+  await sleep(1000);
+  document.getElementById("toast-save").classList.remove("show");
+  await sleep(200);
+
+  // ── STEP 4 ──
+  setStep(4);
+  document.getElementById("cm1").classList.add("show");
+  await sleep(300);
+  document.getElementById("cpanel").classList.add("show");
+  await sleep(300);
+  await showLines("cpl-",1,5,180);
+  await sleep(1500);
+
+  // ── STEP 5: AI understands ──
+  setStep(5,true);
+  document.getElementById("mainCanvas").style.opacity="0";
+  document.getElementById("mainPlugin").style.opacity="0";
+  await sleep(500);
+  document.getElementById("aiShowcase").classList.add("show");
+  await sleep(200);
+
+  // Link bar
+  document.getElementById("linkBar").classList.add("show");
+  await sleep(600);
+
+  // Before
+  document.getElementById("ba-before").classList.add("show");
+  await sleep(300);
+  await showLines("bf-",1,6,100);
+  await sleep(200);
+  await showLines("bfr-",1,3,180);
+  await sleep(1000);
+
+  // After
+  document.getElementById("ba-after").classList.add("show");
+  await sleep(300);
+  await showLines("af-",1,7,100);
+  await sleep(200);
+  await showLines("afr-",1,4,180);
+  await sleep(1200);
+
+  // Claude chat
+  document.getElementById("claude-win").classList.add("show");
+  await sleep(400);
+  document.getElementById("chat-1").classList.add("show");
+  await sleep(800);
+  document.getElementById("chat-2").classList.add("show");
+  await sleep(200);
+  await showLines("cr-",1,1,0);
+  await sleep(400);
+
+  // MCP
+  document.getElementById("mcp-block").classList.add("show");
+  await sleep(200);
+  await showLines("mcp-",1,6,220);
+  await sleep(600);
+
+  // AI response
+  document.getElementById("chat-3").classList.add("show");
+  await sleep(200);
+  await showLines("cr-",2,7,200);
+
+  await sleep(6000);
+  animate();
+}
+
+animate();
+</script>
+</body></html>

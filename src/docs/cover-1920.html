@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>AIR Cover Image</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a0a;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+.cover{width:1920px;height:960px;background:#0D0D0D;position:relative;overflow:hidden;font-family:Inter,system-ui,sans-serif;display:flex;align-items:center}
+
+/* Rainbow strip */
+.rainbow{position:absolute;top:0;right:0;width:6px;bottom:0;display:flex;flex-direction:column}
+.rainbow div{flex:1}
+.r1{background:#F24E1E}.r2{background:#FF7262}.r3{background:#A259FF}.r4{background:#1ABCFE}.r5{background:#0ACF83}
+
+/* Subtle grid bg */
+.cover::before{content:'';position:absolute;inset:0;background:
+  linear-gradient(rgba(255,255,255,.02) 1px, transparent 1px),
+  linear-gradient(90deg, rgba(255,255,255,.02) 1px, transparent 1px);
+  background-size:60px 60px}
+
+/* Left content */
+.left{flex:0 0 50%;padding:0 80px;position:relative;z-index:1}
+.tagline{font-size:16px;font-weight:600;color:#0C8CE9;letter-spacing:2px;text-transform:uppercase;margin-bottom:20px}
+h1{font-size:72px;font-weight:800;color:#fff;line-height:1.1;letter-spacing:-2px;margin-bottom:24px}
+h1 span{color:#0C8CE9}
+.sub{font-size:22px;color:rgba(255,255,255,.4);line-height:1.6;max-width:520px}
+.sub b{color:rgba(255,255,255,.65);font-weight:600}
+
+/* Right — plugin mockup */
+.right{flex:0 0 50%;display:flex;align-items:center;justify-content:center;position:relative;z-index:1}
+
+/* Figma interface backdrop */
+.figma-bg{position:absolute;left:50%;top:50%;transform:translate(-85%,-50%);width:600px;height:440px;background:#1e1e1e;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.5);overflow:hidden;border:1px solid rgba(255,255,255,.06);z-index:1}
+.fg-topbar{height:40px;background:#2c2c2c;border-bottom:1px solid rgba(255,255,255,.06);display:flex;align-items:center;padding:0 12px;gap:10px}
+.fg-topbar-logo{width:20px;height:20px;border-radius:4px;background:#333;display:flex;align-items:center;justify-content:center}
+.fg-topbar-logo svg{width:12px;height:12px}
+.fg-topbar-sep{width:1px;height:20px;background:rgba(255,255,255,.06)}
+.fg-topbar-tool{width:24px;height:24px;border-radius:4px;background:rgba(255,255,255,.04)}
+.fg-topbar-tool.active{background:rgba(12,140,233,.2)}
+.fg-topbar-spacer{flex:1}
+.fg-topbar-filename{font-size:11px;color:rgba(255,255,255,.4);font-weight:500}
+.fg-topbar-avatar{width:22px;height:22px;border-radius:50%;background:#0C8CE9}
+.fg-main{display:flex;height:calc(100% - 40px)}
+
+/* Left panel (layers) */
+.fg-left{width:200px;background:#252525;border-right:1px solid rgba(255,255,255,.06);padding:8px 0}
+.fg-panel-header{padding:6px 12px;font-size:10px;font-weight:600;color:rgba(255,255,255,.3);text-transform:uppercase;letter-spacing:.5px}
+.fg-layer{padding:5px 12px 5px 20px;font-size:10px;color:rgba(255,255,255,.35);display:flex;align-items:center;gap:6px}
+.fg-layer.sel{background:rgba(12,140,233,.15);color:rgba(255,255,255,.8)}
+.fg-layer-icon{width:10px;height:10px;border:1px solid rgba(255,255,255,.15);border-radius:2px;flex-shrink:0}
+.fg-layer.sel .fg-layer-icon{border-color:rgba(12,140,233,.5)}
+.fg-layer-sub{padding-left:32px}
+
+/* Canvas area */
+.fg-canvas{flex:1;background:#1a1a1a;position:relative;display:flex;align-items:center;justify-content:center}
+.fg-canvas-grid{position:absolute;inset:0;background:
+  linear-gradient(rgba(255,255,255,.015) 1px, transparent 1px),
+  linear-gradient(90deg, rgba(255,255,255,.015) 1px, transparent 1px);
+  background-size:40px 40px}
+
+/* Simple UI frame on canvas */
+.fg-frame{width:180px;height:260px;background:#fff;border-radius:8px;border:2px solid #0C8CE9;position:relative}
+.fg-frame-label{position:absolute;top:-18px;left:0;font-size:9px;color:#0C8CE9;font-weight:500;white-space:nowrap}
+.fg-marker{position:absolute;top:4px;left:4px;width:18px;height:14px;border-radius:3px;background:#F24E1E;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff}
+.fg-frame-title{margin:20px 14px 6px;height:10px;background:#222;border-radius:3px;width:60%}
+.fg-frame-sub{margin:0 14px 12px;height:6px;background:#e0e0e0;border-radius:2px;width:80%}
+.fg-frame-input{margin:4px 14px;height:28px;background:#f5f5f5;border:1px solid #e0e0e0;border-radius:5px}
+.fg-frame-inputlabel{margin:10px 14px 2px;height:5px;background:#bbb;border-radius:2px;width:30%}
+.fg-frame-check{margin:10px 14px;display:flex;align-items:center;gap:5px}
+.fg-frame-checkb{width:10px;height:10px;border-radius:2px;background:#0C8CE9}
+.fg-frame-checkt{height:5px;background:#ccc;border-radius:2px;width:60px}
+.fg-frame-btn{margin:10px 14px 0;height:28px;background:#222;border-radius:6px}
+
+/* Right panel */
+.fg-right{width:200px;background:#252525;border-left:1px solid rgba(255,255,255,.06);padding:8px 0}
+.fg-prop-header{padding:6px 12px;font-size:10px;font-weight:600;color:rgba(255,255,255,.3);text-transform:uppercase;letter-spacing:.5px}
+.fg-prop-row{padding:4px 12px;display:flex;justify-content:space-between;align-items:center}
+.fg-prop-label{font-size:9px;color:rgba(255,255,255,.25)}
+.fg-prop-val{font-size:9px;color:rgba(255,255,255,.4);font-family:'SF Mono',Consolas,monospace}
+
+.plugin-mock{width:340px;border-radius:10px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.06);position:absolute;right:180px;top:50%;transform:translateY(-50%);z-index:3}
+.pm-titlebar{background:#383838;padding:8px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid rgba(255,255,255,.06)}
+.pm-icon{width:22px;height:22px;border-radius:5px;background:#111;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
+.pm-icon-strip{position:absolute;top:0;right:0;width:2px;bottom:0;display:flex;flex-direction:column}
+.pm-icon-strip div{flex:1}
+.pm-title{font-size:12px;font-weight:500;color:rgba(255,255,255,.6)}
+
+.pm-body{background:#2c2c2c;padding:0}
+
+/* Hero banner inside plugin */
+.pm-hero{position:relative;padding:14px 16px 12px;background:#111113;background-image:linear-gradient(rgba(255,255,255,.04) 1px, transparent 1px),linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px);background-size:20px 20px;border-bottom:1px solid rgba(255,255,255,.06)}
+.pm-hero-deco{position:absolute;top:0;right:0;width:4px;bottom:0;display:flex;flex-direction:column}
+.pm-hero-deco div{flex:1}
+.pm-hero h2{font-size:18px;font-weight:800;color:#fff;line-height:1.2}
+.pm-hero h2 .blue{color:#2B8CFF}
+.pm-hero-brain{font-size:20px;line-height:1;display:inline}
+.pm-hero-sub{font-size:10px;color:rgba(255,255,255,.3);margin-top:4px}
+
+/* Segments */
+.pm-seg{display:flex;margin:8px 14px 0;background:#383838;border-radius:6px;padding:2px}
+.pm-seg-btn{flex:1;padding:5px 0;text-align:center;font-size:11px;font-weight:600;color:rgba(255,255,255,.4);border-radius:4px}
+.pm-seg-btn.active{color:rgba(255,255,255,.9);background:#2c2c2c;box-shadow:0 0 0 1px rgba(255,255,255,.1)}
+
+/* Edit area */
+.pm-edit{padding:10px 14px 14px}
+.pm-node{display:flex;align-items:center;gap:8px;padding:4px 0 8px}
+.pm-badge{width:28px;height:20px;border-radius:5px;background:#F24E1E;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff}
+.pm-node-name{font-size:12px;font-weight:600;color:rgba(255,255,255,.9)}
+.pm-node-meta{font-size:10px;color:rgba(255,255,255,.25);font-family:'SF Mono',Consolas,monospace;margin-top:1px}
+
+/* Color row */
+.pm-colors{display:flex;gap:5px;margin:6px 0 10px}
+.pm-cd{width:20px;height:20px;border-radius:5px}
+.pm-cd.sel{border:2px solid #fff;box-shadow:0 0 0 1px rgba(255,255,255,.3)}
+.pm-cc{width:20px;height:20px;border-radius:5px;border:1.5px dashed rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.2);font-size:11px}
+
+.pm-label{font-size:11px;color:rgba(255,255,255,.4);margin-bottom:4px;font-weight:500}
+.pm-input{width:100%;border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:7px 10px;font-size:12px;background:rgba(255,255,255,.03);color:rgba(255,255,255,.7);font-family:Inter,sans-serif;margin-bottom:10px}
+
+/* Chips */
+.pm-chips{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px}
+.pm-chip{padding:4px 8px;border-radius:4px;background:#383838;font-size:10px;font-weight:500;color:rgba(255,255,255,.4)}
+
+/* Textarea */
+.pm-ta{width:100%;border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:7px 10px;font-family:'SF Mono',Consolas,monospace;font-size:11px;line-height:1.7;background:rgba(255,255,255,.03);color:rgba(255,255,255,.6);min-height:80px;resize:none;white-space:pre-line}
+
+/* Buttons */
+.pm-btns{display:flex;gap:6px;margin-top:8px}
+.pm-btn{padding:7px 18px;border-radius:6px;font-size:11px;font-weight:600;border:none}
+.pm-btn-save{background:#0C8CE9;color:#fff}
+.pm-btn-del{background:rgba(244,63,94,.1);color:#F43F5E}
+
+/* Canvas panel floating */
+.canvas-panel{position:absolute;left:22%;top:55%;transform:translate(-60%,-25%) rotate(1.5deg);width:200px;background:#fff;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.4);overflow:hidden;z-index:2}
+.cpn-header{padding:10px 12px 8px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;gap:7px}
+.cpn-badge{width:22px;height:16px;border-radius:4px;background:#F24E1E;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff}
+.cpn-dots{display:flex;gap:2px}
+.cpn-dots span{width:5px;height:5px;border-radius:50%;background:#ddd}
+.cpn-ht{font-size:9px;color:#999;font-weight:500}
+.cpn-title{padding:6px 12px 0;font-size:11px;font-weight:700;color:#222}
+.cpn-desc{margin:8px 10px;padding:7px 10px;background:#f5f5f5;border-radius:5px;font-size:8.5px;color:#666;line-height:1.5}
+.cpn-body{padding:4px 10px 10px}
+.cpn-row{display:flex;align-items:center;gap:6px;padding:4px 0}
+.cpn-pill{padding:2px 6px;border-radius:3px;font-size:7.5px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+.cpn-val{font-size:8px;color:#333;font-family:'SF Mono',Consolas,monospace}
+.pill-route{background:#E3F2FD;color:#1565C0}
+.pill-auth{background:#E8F5E9;color:#2E7D32}
+.pill-api{background:#FFF3E0;color:#E65100}
+.pill-warn{background:#FFEBEE;color:#C62828}
+.cpn-footer{padding:6px 10px;border-top:1px solid #f0f0f0;font-size:7px;color:#bbb}
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="rainbow"><div class="r1"></div><div class="r2"></div><div class="r3"></div><div class="r4"></div><div class="r5"></div></div>
+
+  <!-- Left -->
+  <div class="left">
+    <div class="tagline">Figma Plugin</div>
+    <h1>Make Figma<br><span>AI-Readable</span> 🧠</h1>
+    <div class="sub">Annotate your design intent directly on layers.<br>Share the Figma link — AI gets it.</div>
+  </div>
+
+  <!-- Right -->
+  <div class="right">
+    <!-- Figma interface backdrop -->
+    <div class="figma-bg">
+      <div class="fg-topbar">
+        <div class="fg-topbar-logo"><svg viewBox="0 0 16 16" fill="none"><path d="M5 1h3v4.5H5A2.25 2.25 0 015 1z" fill="#F24E1E"/><path d="M8 1h3a2.25 2.25 0 010 4.5H8V1z" fill="#FF7262"/><path d="M5 5.5h3V10H5a2.25 2.25 0 010-4.5z" fill="#A259FF"/><path d="M5 10h3v2.25A2.25 2.25 0 015.75 15 2.25 2.25 0 015 12.25V10z" fill="#0ACF83"/><circle cx="11.25" cy="7.75" r="2.25" fill="#1ABCFE"/></svg></div>
+        <div class="fg-topbar-sep"></div>
+        <div class="fg-topbar-tool active"></div>
+        <div class="fg-topbar-tool"></div>
+        <div class="fg-topbar-tool"></div>
+        <div class="fg-topbar-tool"></div>
+        <div class="fg-topbar-spacer"></div>
+        <div class="fg-topbar-filename">Sign Up — Design</div>
+        <div class="fg-topbar-avatar"></div>
+      </div>
+      <div class="fg-main">
+        <div class="fg-left">
+          <div class="fg-panel-header">Layers</div>
+          <div class="fg-layer sel"><div class="fg-layer-icon"></div>Sign Up Form</div>
+          <div class="fg-layer fg-layer-sub"><div class="fg-layer-icon"></div>Title</div>
+          <div class="fg-layer fg-layer-sub"><div class="fg-layer-icon"></div>Email Input</div>
+          <div class="fg-layer fg-layer-sub"><div class="fg-layer-icon"></div>Password Input</div>
+          <div class="fg-layer fg-layer-sub"><div class="fg-layer-icon"></div>Confirm Password</div>
+          <div class="fg-layer fg-layer-sub"><div class="fg-layer-icon"></div>Terms Checkbox</div>
+          <div class="fg-layer fg-layer-sub"><div class="fg-layer-icon"></div>Submit Button</div>
+        </div>
+        <div class="fg-canvas">
+          <div class="fg-canvas-grid"></div>
+          <div class="fg-frame">
+            <div class="fg-frame-label">Sign Up Form</div>
+            <div class="fg-marker">1</div>
+            <div class="fg-frame-title"></div>
+            <div class="fg-frame-sub"></div>
+            <div class="fg-frame-inputlabel"></div>
+            <div class="fg-frame-input"></div>
+            <div class="fg-frame-inputlabel"></div>
+            <div class="fg-frame-input"></div>
+            <div class="fg-frame-inputlabel"></div>
+            <div class="fg-frame-input"></div>
+            <div class="fg-frame-check"><div class="fg-frame-checkb"></div><div class="fg-frame-checkt"></div></div>
+            <div class="fg-frame-btn"></div>
+          </div>
+        </div>
+        <div class="fg-right">
+          <div class="fg-prop-header">Design</div>
+          <div class="fg-prop-row"><span class="fg-prop-label">X</span><span class="fg-prop-val">120</span></div>
+          <div class="fg-prop-row"><span class="fg-prop-label">Y</span><span class="fg-prop-val">80</span></div>
+          <div class="fg-prop-row"><span class="fg-prop-label">W</span><span class="fg-prop-val">375</span></div>
+          <div class="fg-prop-row"><span class="fg-prop-label">H</span><span class="fg-prop-val">640</span></div>
+          <div class="fg-prop-header" style="margin-top:8px">Fill</div>
+          <div class="fg-prop-row"><span class="fg-prop-label">■</span><span class="fg-prop-val">#FFFFFF</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Plugin mockup (on top) -->
+    <div class="plugin-mock">
+      <div class="pm-titlebar">
+        <div class="pm-icon"><span style="font-size:10px;position:relative;z-index:1">🧠</span><div class="pm-icon-strip"><div style="background:#F24E1E"></div><div style="background:#FF7262"></div><div style="background:#A259FF"></div><div style="background:#1ABCFE"></div><div style="background:#0ACF83"></div></div></div>
+        <div class="pm-title">AIR: AI-Readable Annotator</div>
+      </div>
+      <div class="pm-body">
+        <div class="pm-hero">
+          <div class="pm-hero-deco"><div class="r1"></div><div class="r2"></div><div class="r3"></div><div class="r4"></div><div class="r5"></div></div>
+          <h2>Make Figma<br><span class="blue">AI-Readable</span> <span class="pm-hero-brain">🧠</span></h2>
+          <div class="pm-hero-sub">Annotate layers, share the Figma link with AI.</div>
+        </div>
+        <div class="pm-seg"><div class="pm-seg-btn active">Edit</div><div class="pm-seg-btn">Annotations</div></div>
+        <div class="pm-edit">
+          <div class="pm-node">
+            <div class="pm-badge">1</div>
+            <div><div class="pm-node-name">Sign Up Form</div><div class="pm-node-meta">FRAME · 312:847</div></div>
+          </div>
+          <div class="pm-label">Tag Color</div>
+          <div class="pm-colors">
+            <div class="pm-cd sel" style="background:#F24E1E"></div>
+            <div class="pm-cd" style="background:#FF7262"></div>
+            <div class="pm-cd" style="background:#A259FF"></div>
+            <div class="pm-cd" style="background:#1ABCFE"></div>
+            <div class="pm-cd" style="background:#0ACF83"></div>
+            <div class="pm-cd" style="background:#111"></div>
+            <div class="pm-cc">+</div>
+          </div>
+          <div class="pm-label">Title</div>
+          <div class="pm-input">Sign Up Form</div>
+          <div class="pm-label">Properties</div>
+          <div class="pm-chips"><div class="pm-chip">Route</div><div class="pm-chip">Auth</div><div class="pm-chip">Desc</div><div class="pm-chip">Warn</div><div class="pm-chip">Memo</div><div class="pm-chip">UX</div><div class="pm-chip">API</div></div>
+          <div class="pm-ta">[route] /signup
+[auth] public
+[api] POST /api/users</div>
+          <div class="pm-btns"><div class="pm-btn pm-btn-save">Save</div><div class="pm-btn pm-btn-del">Delete</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Floating annotation panel -->
+    <div class="canvas-panel">
+      <div class="cpn-header">
+        <div class="cpn-badge">1</div>
+        <div class="cpn-dots"><span></span><span></span><span></span></div>
+        <div class="cpn-ht">AIR Annotation · FRAME</div>
+      </div>
+      <div class="cpn-title">Sign Up Form</div>
+      <div class="cpn-desc">User registration with email verify</div>
+      <div class="cpn-body">
+        <div class="cpn-row"><span class="cpn-pill pill-route">ROUTE</span><span class="cpn-val">/signup</span></div>
+        <div class="cpn-row"><span class="cpn-pill pill-auth">AUTH</span><span class="cpn-val">public</span></div>
+        <div class="cpn-row"><span class="cpn-pill pill-api">API</span><span class="cpn-val">POST /api/users</span></div>
+        <div class="cpn-row"><span class="cpn-pill pill-warn">WARN</span><span class="cpn-val">Rate limit 5 req/min</span></div>
+      </div>
+      <div class="cpn-footer">AIR: AI-Readable Annotator · Do not edit directly</div>
+    </div>
+  </div>
+</div>
+
+</body></html>
