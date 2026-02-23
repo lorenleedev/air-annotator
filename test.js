@@ -624,7 +624,7 @@ suite("UI 텍스트 일관성");
   assert("패널 프레임 이름 = 📋 Annotation:", code.indexOf('alFrame("📋 Annotation: "') >= 0);
 
   // footer 텍스트
-  assert("패널 footer 텍스트 존재", code.indexOf("AIR: AI-Readable Annotator · Do not edit directly") >= 0);
+  assert("패널 footer 안내 텍스트 존재", code.indexOf("Click this panel") >= 0 && code.indexOf("Edit Annotation") >= 0);
 
   // 테마 토글 버튼 존재
   assert("테마 토글 버튼 존재", ui.indexOf('id="themeBtn"') >= 0);

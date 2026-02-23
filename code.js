@@ -392,7 +392,7 @@
     footer.primaryAxisSizingMode = "AUTO";
     footer.counterAxisSizingMode = "AUTO";
     footer.counterAxisAlignItems = "CENTER";
-    footer.appendChild(txt("AIR: AI-Readable Annotator · Do not edit directly · " + updatedAt, 9, th.footer, false));
+    footer.appendChild(txt("Click this panel → Edit Annotation (bottom of Inspector)", 9, th.footer, false));
     panel.appendChild(footer);
     panel.x = targetNode.absoluteTransform[0][2] + targetNode.width + PANEL_GAP;
     panel.y = targetNode.absoluteTransform[1][2];

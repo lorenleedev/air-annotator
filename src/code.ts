@@ -499,7 +499,7 @@ function createSpecPanel(title: string, desc: string, num: string | number, targ
   footer.primaryAxisSizingMode = "AUTO";
   footer.counterAxisSizingMode = "AUTO";
   footer.counterAxisAlignItems = "CENTER";
-  footer.appendChild(txt("AIR: AI-Readable Annotator · Do not edit directly · " + updatedAt, 9, th.footer, false));
+  footer.appendChild(txt("Click this panel → Edit Annotation (bottom of Inspector)", 9, th.footer, false));
   panel.appendChild(footer);
 
   // Position
