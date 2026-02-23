@@ -553,19 +553,23 @@
       const oldPanelName = "📋 Spec: " + num;
       const markerName = "🏷️ " + num;
       let targetNodeId = "";
+      let foundPanel = false;
+      let foundMarker = false;
       const children = figma.currentPage.children;
       for (let i = 0; i < children.length; i++) {
         const c = children[i];
-        if (c.name === panelName || c.name === oldPanelName) {
+        if (!foundPanel && (c.name === panelName || c.name === oldPanelName)) {
           c.visible = isVisible;
           try {
             targetNodeId = c.getPluginData("targetNodeId") || "";
           } catch (e) {
           }
-        }
-        if (c.name === markerName) {
+          foundPanel = true;
+        } else if (!foundMarker && c.name === markerName) {
           c.visible = isVisible;
+          foundMarker = true;
         }
+        if (foundPanel && foundMarker) break;
       }
       if (targetNodeId) {
         const targetNode = yield figma.getNodeByIdAsync(targetNodeId);
@@ -574,6 +578,7 @@
           for (let k = 0; k < tChildren.length; k++) {
             if (tChildren[k].name === markerName) {
               tChildren[k].visible = isVisible;
+              break;
             }
           }
         }
@@ -1249,47 +1254,78 @@
         setHiddenNums(hiddenSet);
         yield setAnnotationVisibility(num, msg.visible);
         figma.ui.postMessage({ type: "visibility-changed", num: msg.num, visible: msg.visible });
-        yield updateSpecIndex();
+        updateSpecIndex();
       }
       if (msg.type === "set-all-visibility") {
-        const hiddenSet = getHiddenNums();
         const allNums = [];
+        const seen = {};
+        const targetNodeIds = [];
         const children = figma.currentPage.children;
         for (let i = 0; i < children.length; i++) {
           const c = children[i];
-          const dm = c.name.match(/__specData_(\d+)__/);
-          if (dm) {
-            allNums.push(parseInt(dm[1]));
-            continue;
-          }
           const pm = c.name.match(/^📋 (?:Annotation|Spec): (\d+)/);
           if (pm) {
-            allNums.push(parseInt(pm[1]));
+            c.visible = msg.visible;
+            const pnum = parseInt(pm[1]);
+            if (!seen[pnum]) {
+              allNums.push(pnum);
+              seen[pnum] = true;
+            }
+            try {
+              const tid = c.getPluginData("targetNodeId") || "";
+              if (tid) targetNodeIds.push(tid);
+            } catch (e) {
+            }
+            continue;
+          }
+          const mm = c.name.match(/^🏷️ (\d+)$/);
+          if (mm) {
+            c.visible = msg.visible;
+            const mnum = parseInt(mm[1]);
+            if (!seen[mnum]) {
+              allNums.push(mnum);
+              seen[mnum] = true;
+            }
+            continue;
+          }
+          const dm = c.name.match(/__specData_(\d+)__/);
+          if (dm) {
+            const dnum = parseInt(dm[1]);
+            if (!seen[dnum]) {
+              allNums.push(dnum);
+              seen[dnum] = true;
+            }
           }
         }
-        const uniqueNums = [];
-        const seen = {};
-        for (let i = 0; i < allNums.length; i++) {
-          if (!seen[allNums[i]]) {
-            uniqueNums.push(allNums[i]);
-            seen[allNums[i]] = true;
+        const targetPromises = [];
+        for (let i = 0; i < targetNodeIds.length; i++) {
+          targetPromises.push(figma.getNodeByIdAsync(targetNodeIds[i]));
+        }
+        const resolvedTargets = yield Promise.all(targetPromises);
+        for (let i = 0; i < resolvedTargets.length; i++) {
+          const tNode = resolvedTargets[i];
+          if (tNode && "children" in tNode) {
+            const tChildren = tNode.children;
+            for (let k = 0; k < tChildren.length; k++) {
+              if (tChildren[k].name.match(/^🏷️ \d+$/)) {
+                tChildren[k].visible = msg.visible;
+              }
+            }
           }
         }
+        const hiddenSet = getHiddenNums();
         if (msg.visible) {
           hiddenSet.clear();
         } else {
-          for (let i = 0; i < uniqueNums.length; i++) {
-            hiddenSet.add(uniqueNums[i]);
+          for (let i = 0; i < allNums.length; i++) {
+            hiddenSet.add(allNums[i]);
           }
         }
         setHiddenNums(hiddenSet);
-        for (let i = 0; i < uniqueNums.length; i++) {
-          yield setAnnotationVisibility(uniqueNums[i], msg.visible);
-        }
         const label = msg.visible ? "shown" : "hidden";
-        figma.notify("👁️ " + uniqueNums.length + " annotation(s) " + label);
+        figma.notify("👁️ " + allNums.length + " annotation(s) " + label);
         figma.ui.postMessage({ type: "all-visibility-changed", visible: msg.visible });
-        yield updateSpecIndex();
+        updateSpecIndex();
       }
       if (msg.type === "cancel") {
         figma.closePlugin();
