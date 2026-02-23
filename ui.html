@@ -1093,13 +1093,17 @@ function renderSpecList(specs) {
         deleteFromList(num, targetId);
       };
     })(s.num, s.targetNodeId);
-    // Item click → select + Edit tab
-    item.onclick = (function(nodeId) {
+    // Item click → Edit tab (선택 이동 없이 데이터만 표시)
+    item.onclick = (function(spec) {
       return function() {
-        if (nodeId) parent.postMessage({ pluginMessage: { type: "select-node", nodeId: nodeId } }, "*");
-        setTimeout(function() { switchTab("sel"); }, 200);
+        var name = "[AIR-" + spec.num + "] " + (spec.title || "");
+        showSelContent(name, spec.targetNodeId || "", spec.title || "", spec.desc || "");
+        currentNodeId = spec.targetNodeId || null;
+        if (spec.color) { selectedColor = spec.color; pickColor(spec.color); }
+        document.getElementById("nodeBadge").style.background = spec.color || selectedColor || "#F24E1E";
+        switchTab("sel");
       };
-    })(s.targetNodeId);
+    })(s);
     item.ondragstart = (function(num) {
       return function(e) {
         dragSrcNum = num;
