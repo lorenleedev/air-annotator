@@ -123,11 +123,13 @@ if (figma.command === "edit") {
     // 대상 노드로 이동
     if (targetId) {
       (async function(): Promise<void> {
-        const targetNode: BaseNode | null = await figma.getNodeByIdAsync(targetId);
-        if (targetNode) {
-          figma.currentPage.selection = [targetNode as SceneNode];
-          figma.viewport.scrollAndZoomIntoView([targetNode as SceneNode]);
-        }
+        try {
+          const targetNode: BaseNode | null = await figma.getNodeByIdAsync(targetId);
+          if (targetNode) {
+            figma.currentPage.selection = [targetNode as SceneNode];
+            figma.viewport.scrollAndZoomIntoView([targetNode as SceneNode]);
+          }
+        } catch(e) {}
       })();
     }
   }
@@ -1012,8 +1014,10 @@ function scanLayers(node: BaseNode & ChildrenMixin, depth: number): LayerInfo[] 
 // 선택 읽기
 // ──────────────────────────────────────
 let _readingSelection: boolean = false;
+let _readSelectionSeq: number = 0;
 async function readSelectedDesc(): Promise<void> {
   if (_readingSelection) return;
+  const seq: number = ++_readSelectionSeq;
   const sel: readonly SceneNode[] = figma.currentPage.selection;
   if (sel.length === 0) {
     figma.ui.postMessage({ type: "selection-empty" });
@@ -1032,6 +1036,7 @@ async function readSelectedDesc(): Promise<void> {
 
     if (targetId) {
       const targetNode: BaseNode | null = await figma.getNodeByIdAsync(targetId);
+      if (seq !== _readSelectionSeq) return;
       if (targetNode) {
         _readingSelection = true;
         figma.currentPage.selection = [targetNode as SceneNode];
@@ -1062,6 +1067,7 @@ async function readSelectedDesc(): Promise<void> {
     }
     if (pTargetId) {
       const pTarget: BaseNode | null = await figma.getNodeByIdAsync(pTargetId);
+      if (seq !== _readSelectionSeq) return;
       if (pTarget) { pTargetName = pTarget.name; pTargetType = pTarget.type; }
     }
     figma.ui.postMessage({
@@ -1202,6 +1208,10 @@ async function applyBatch(mappings: BatchMapping[]): Promise<BatchResult> {
     if (result.ok) success++;
     else { fail++; errors.push(result.error!); }
   }
+  // 배치 완료 후 캐시를 실제 최대 번호로 갱신 (번호 충돌 방지)
+  if (mappings.length > 1) {
+    figma.currentPage.setPluginData("airMaxNum", String(nextNum + mappings.length - 1));
+  }
   return { success: success, fail: fail, errors: errors };
 }
 
@@ -1277,13 +1287,22 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
         try { createHiddenDataNode(rpnum, rpTitle, rpDesc, rpColor, rpTarget); } catch(e) {}
       }
     }
-    // Rebuild each panel
+    // Rebuild each panel — 병렬로 target 노드 resolve
+    const rebuildTargetIds: string[] = [];
+    for (let si = 0; si < allSpecs.length; si++) {
+      rebuildTargetIds.push(allSpecs[si].data.target || "");
+    }
+    const rebuildNodePromises: Array<Promise<BaseNode | null>> = [];
+    for (let si = 0; si < rebuildTargetIds.length; si++) {
+      rebuildNodePromises.push(rebuildTargetIds[si] ? figma.getNodeByIdAsync(rebuildTargetIds[si]) : Promise.resolve(null));
+    }
+    const rebuildResolvedNodes: Array<BaseNode | null> = await Promise.all(rebuildNodePromises);
+
     for (let si = 0; si < allSpecs.length; si++) {
       const spec: { num: string; data: HiddenData } = allSpecs[si];
       const targetId: string = spec.data.target;
       if (!targetId) continue;
-      let tNode: BaseNode | null = null;
-      try { tNode = await figma.getNodeByIdAsync(targetId); } catch(e) {}
+      const tNode: BaseNode | null = rebuildResolvedNodes[si];
       if (!tNode) continue;
 
       // Save existing panel position (check both old and new name)
@@ -1347,7 +1366,16 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
     const listHiddenMap: Map<string, HiddenData> = buildHiddenDataMap();
     const listHiddenNums: Set<number> = getHiddenNums();
 
-    // 1차: 숨김 데이터 노드에서 스캔 (기존 방식)
+    // 패널 targetNodeId 캐시 (O(n) 단일 패스)
+    const panelTargetMap: Record<string, string> = {};
+    for (let pi = 0; pi < children.length; pi++) {
+      const pm: RegExpMatchArray | null = children[pi].name.match(/^📋 (?:Annotation|Spec): (\d+)/);
+      if (pm) {
+        try { panelTargetMap[pm[1]] = children[pi].getPluginData("targetNodeId") || ""; } catch(e) {}
+      }
+    }
+
+    // 1차: 숨김 데이터 노드에서 스캔
     for (let i = 0; i < children.length; i++) {
       const c: SceneNode = children[i];
       if (c.name.indexOf("__specData_") === 0 && c.type === "TEXT") {
@@ -1357,13 +1385,7 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
         const data: HiddenData | null = listHiddenMap.get(num) || null;
         let targetId: string = (data && data.target) ? data.target : "";
         if (!targetId) {
-          for (let j = 0; j < children.length; j++) {
-            const cjn: string = children[j].name;
-            if (cjn === "📋 Annotation: " + num || cjn === "📋 Spec: " + num) {
-              try { targetId = children[j].getPluginData("targetNodeId") || ""; } catch(e) {}
-              break;
-            }
-          }
+          targetId = panelTargetMap[num] || "";
         }
         specs.push({
           num: num,

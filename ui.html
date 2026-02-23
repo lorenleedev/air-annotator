@@ -900,6 +900,11 @@ function renderChips() {
 // ──────────────────────────────────────
 // Core
 // ──────────────────────────────────────
+function escHtml(s) {
+  if (!s) return s;
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 var currentNodeId = null;
 var selectedColor = "#F24E1E";
 var COLORS = ["#F24E1E", "#FF7262", "#A259FF", "#1ABCFE", "#0ACF83", "#0D0D0D"];
@@ -1062,12 +1067,12 @@ function renderSpecList(specs) {
     item.innerHTML =
       '<div class="spec-body">' +
         '<div class="spec-title-row">' +
-          '<div class="spec-num" style="background:' + numColor + '">' + s.num + '</div>' +
-          '<div class="spec-title">' + (s.title || '(untitled)') + '</div>' +
+          '<div class="spec-num" style="background:' + escHtml(numColor) + '">' + escHtml(s.num) + '</div>' +
+          '<div class="spec-title">' + escHtml(s.title || '(untitled)') + '</div>' +
         '</div>' +
-        '<div class="spec-preview">' + (s.preview || '\u2014') + '</div>' +
+        '<div class="spec-preview">' + escHtml(s.preview || '\u2014') + '</div>' +
       '</div>' +
-      '<button class="spec-delete" data-num="' + s.num + '" data-target="' + (s.targetNodeId || '') + '" title="Delete">' +
+      '<button class="spec-delete" data-num="' + escHtml(s.num) + '" data-target="' + escHtml(s.targetNodeId || '') + '" title="Delete">' +
         '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' +
         '<path d="M3 4h10M6 4V3a1 1 0 011-1h2a1 1 0 011 1v1M5 4v8.5a1 1 0 001 1h4a1 1 0 001-1V4"/></svg>' +
       '</button>' +

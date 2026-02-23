@@ -48,10 +48,13 @@
       if (targetId) {
         (function() {
           return __async(this, null, function* () {
-            const targetNode = yield figma.getNodeByIdAsync(targetId);
-            if (targetNode) {
-              figma.currentPage.selection = [targetNode];
-              figma.viewport.scrollAndZoomIntoView([targetNode]);
+            try {
+              const targetNode = yield figma.getNodeByIdAsync(targetId);
+              if (targetNode) {
+                figma.currentPage.selection = [targetNode];
+                figma.viewport.scrollAndZoomIntoView([targetNode]);
+              }
+            } catch (e) {
             }
           });
         })();
@@ -838,9 +841,11 @@
     return results;
   }
   var _readingSelection = false;
+  var _readSelectionSeq = 0;
   function readSelectedDesc() {
     return __async(this, null, function* () {
       if (_readingSelection) return;
+      const seq = ++_readSelectionSeq;
       const sel = figma.currentPage.selection;
       if (sel.length === 0) {
         figma.ui.postMessage({ type: "selection-empty" });
@@ -855,6 +860,7 @@
         if (hidden && hidden.target) targetId = hidden.target;
         if (targetId) {
           const targetNode = yield figma.getNodeByIdAsync(targetId);
+          if (seq !== _readSelectionSeq) return;
           if (targetNode) {
             _readingSelection = true;
             figma.currentPage.selection = [targetNode];
@@ -892,6 +898,7 @@
         }
         if (pTargetId) {
           const pTarget = yield figma.getNodeByIdAsync(pTargetId);
+          if (seq !== _readSelectionSeq) return;
           if (pTarget) {
             pTargetName = pTarget.name;
             pTargetType = pTarget.type;
@@ -1023,6 +1030,9 @@
           errors.push(result.error);
         }
       }
+      if (mappings.length > 1) {
+        figma.currentPage.setPluginData("airMaxNum", String(nextNum + mappings.length - 1));
+      }
       return { success, fail, errors };
     });
   }
@@ -1100,15 +1110,20 @@
             }
           }
         }
+        const rebuildTargetIds = [];
+        for (let si = 0; si < allSpecs.length; si++) {
+          rebuildTargetIds.push(allSpecs[si].data.target || "");
+        }
+        const rebuildNodePromises = [];
+        for (let si = 0; si < rebuildTargetIds.length; si++) {
+          rebuildNodePromises.push(rebuildTargetIds[si] ? figma.getNodeByIdAsync(rebuildTargetIds[si]) : Promise.resolve(null));
+        }
+        const rebuildResolvedNodes = yield Promise.all(rebuildNodePromises);
         for (let si = 0; si < allSpecs.length; si++) {
           const spec = allSpecs[si];
           const targetId = spec.data.target;
           if (!targetId) continue;
-          let tNode = null;
-          try {
-            tNode = yield figma.getNodeByIdAsync(targetId);
-          } catch (e) {
-          }
+          const tNode = rebuildResolvedNodes[si];
           if (!tNode) continue;
           const panelName = "📋 Annotation: " + spec.num;
           const oldPanelName = "📋 Spec: " + spec.num;
@@ -1166,6 +1181,16 @@
         const children = figma.currentPage.children;
         const listHiddenMap = buildHiddenDataMap();
         const listHiddenNums = getHiddenNums();
+        const panelTargetMap = {};
+        for (let pi = 0; pi < children.length; pi++) {
+          const pm = children[pi].name.match(/^📋 (?:Annotation|Spec): (\d+)/);
+          if (pm) {
+            try {
+              panelTargetMap[pm[1]] = children[pi].getPluginData("targetNodeId") || "";
+            } catch (e) {
+            }
+          }
+        }
         for (let i = 0; i < children.length; i++) {
           const c = children[i];
           if (c.name.indexOf("__specData_") === 0 && c.type === "TEXT") {
@@ -1175,16 +1200,7 @@
             const data = listHiddenMap.get(num) || null;
             let targetId = data && data.target ? data.target : "";
             if (!targetId) {
-              for (let j = 0; j < children.length; j++) {
-                const cjn = children[j].name;
-                if (cjn === "📋 Annotation: " + num || cjn === "📋 Spec: " + num) {
-                  try {
-                    targetId = children[j].getPluginData("targetNodeId") || "";
-                  } catch (e) {
-                  }
-                  break;
-                }
-              }
+              targetId = panelTargetMap[num] || "";
             }
             specs.push({
               num,
