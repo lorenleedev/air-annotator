@@ -203,6 +203,18 @@
   .spec-delete:hover { background: rgba(244,63,94,.12); color: #F43F5E; }
   .spec-delete svg { width: 14px; height: 14px; }
 
+  .spec-vis {
+    width: 24px; height: 24px; border: none; border-radius: 4px;
+    background: none; cursor: pointer; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--figma-color-text-tertiary); opacity: 0; transition: all 0.15s;
+  }
+  .spec-item:hover .spec-vis { opacity: 1; }
+  .spec-vis:hover { background: var(--figma-color-bg-hover); color: var(--figma-color-text-secondary); }
+  .spec-vis svg { width: 14px; height: 14px; }
+  .spec-item.hidden { opacity: 0.45; }
+  .spec-item.hidden .spec-vis { opacity: 1; }
+
   /* ─── Textarea ─── */
   textarea {
     width: 100%; border: 1px solid var(--figma-color-border);
@@ -628,6 +640,9 @@
   <div class="list-header">
     <div class="section-label" style="margin:0" data-i18n="list_title">All Annotations</div>
     <div class="list-actions">
+      <button class="list-btn" id="btnToggleAllVis" onclick="toggleAllVisibility()" data-tip="Hide all annotations on canvas" data-i18n-tip="tip_hide_all">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2.5"/></svg>
+      </button>
       <button class="list-btn" onclick="exportSpecs('md')" data-tip="Download as Markdown" data-i18n-tip="tip_md">MD</button>
       <button class="list-btn" onclick="exportSpecs('json')" data-tip="Download as JSON" data-i18n-tip="tip_json">JSON</button>
       <button class="list-btn" onclick="rebuildIndex()" data-tip="Rebuild AI spec index" data-i18n-tip="tip_index">Index</button>
@@ -715,7 +730,13 @@ var I18N = {
     tip_md: "Download as Markdown",
     tip_json: "Download as JSON",
     tip_index: "Rebuild AI spec index",
-    tip_refresh: "Refresh list"
+    tip_refresh: "Refresh list",
+    btn_hide: "Hide",
+    btn_show: "Show",
+    btn_hide_all: "Hide All",
+    btn_show_all: "Show All",
+    tip_hide_all: "Hide all annotations on canvas",
+    tip_show_all: "Show all annotations on canvas"
   },
   ko: {
     tab_edit: "편집",
@@ -762,7 +783,13 @@ var I18N = {
     tip_md: "마크다운 다운로드",
     tip_json: "JSON 다운로드",
     tip_index: "AI용 스펙 인덱스 갱신",
-    tip_refresh: "목록 새로고침"
+    tip_refresh: "목록 새로고침",
+    btn_hide: "숨기기",
+    btn_show: "표시",
+    btn_hide_all: "모두 숨기기",
+    btn_show_all: "모두 표시",
+    tip_hide_all: "캔버스의 모든 어노테이션 숨기기",
+    tip_show_all: "캔버스의 모든 어노테이션 표시"
   }
 };
 
@@ -979,12 +1006,15 @@ function renderSpecList(specs) {
   cachedSpecs = specs || [];
   var container = document.getElementById("specList"), empty = document.getElementById("specListEmpty");
   container.innerHTML = "";
-  if (!specs || specs.length === 0) { empty.style.display = "flex"; return; }
+  if (!specs || specs.length === 0) { empty.style.display = "flex"; updateToggleAllBtn(); return; }
   empty.style.display = "none";
   for (var i = 0; i < specs.length; i++) {
     var s = specs[i], item = document.createElement("div");
-    item.className = "spec-item";
+    item.className = "spec-item" + (s.hidden ? " hidden" : "");
     var numColor = s.color || "#F24E1E";
+    var eyeIcon = s.hidden
+      ? '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2l12 12"/><path d="M6.5 6.5a2.5 2.5 0 003.5 3.5"/><path d="M4.2 4.2C2.4 5.6 1 8 1 8s2.5 5 7 5c1.4 0 2.6-.5 3.6-1.2"/><path d="M11 4.7C13.3 6 15 8 15 8s-2.5 5-7 5c-.5 0-1-.1-1.5-.2"/></svg>'
+      : '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2.5"/></svg>';
     item.innerHTML =
       '<div class="spec-body">' +
         '<div class="spec-title-row">' +
@@ -993,19 +1023,27 @@ function renderSpecList(specs) {
         '</div>' +
         '<div class="spec-preview">' + (s.preview || '\u2014') + '</div>' +
       '</div>' +
+      '<button class="spec-vis" data-num="' + s.num + '" data-hidden="' + (s.hidden ? '1' : '0') + '" title="' + (s.hidden ? 'Show' : 'Hide') + '">' + eyeIcon + '</button>' +
       '<button class="spec-delete" data-num="' + s.num + '" data-target="' + (s.targetNodeId || '') + '" title="Delete">' +
         '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' +
         '<path d="M3 4h10M6 4V3a1 1 0 011-1h2a1 1 0 011 1v1M5 4v8.5a1 1 0 001 1h4a1 1 0 001-1V4"/></svg>' +
       '</button>' +
       '<div class="spec-arrow"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>';
-    // 삭제 버튼 클릭
+    // Eye toggle click
+    item.querySelector(".spec-vis").onclick = (function(num, isHidden) {
+      return function(e) {
+        e.stopPropagation();
+        toggleVisibility(num, isHidden);
+      };
+    })(s.num, !!s.hidden);
+    // Delete button click
     item.querySelector(".spec-delete").onclick = (function(num, targetId) {
       return function(e) {
         e.stopPropagation();
         deleteFromList(num, targetId);
       };
     })(s.num, s.targetNodeId);
-    // 항목 클릭 → 선택 + Edit 탭
+    // Item click → select + Edit tab
     item.onclick = (function(nodeId) {
       return function() {
         if (nodeId) parent.postMessage({ pluginMessage: { type: "select-node", nodeId: nodeId } }, "*");
@@ -1014,6 +1052,7 @@ function renderSpecList(specs) {
     })(s.targetNodeId);
     container.appendChild(item);
   }
+  updateToggleAllBtn();
 }
 
 function showSelContent(name, meta, title, desc) {
@@ -1080,6 +1119,34 @@ function deleteFromList(num, targetNodeId) {
   var t = I18N[currentLang];
   if (!confirm(t.confirm_delete || "Delete this annotation?")) return;
   parent.postMessage({ pluginMessage: { type: "delete-spec", nodeId: targetNodeId, num: num } }, "*");
+}
+
+function toggleVisibility(num, isCurrentlyHidden) {
+  parent.postMessage({ pluginMessage: { type: "toggle-visibility", num: String(num), visible: isCurrentlyHidden } }, "*");
+}
+
+function toggleAllVisibility() {
+  var anyVisible = cachedSpecs.some(function(s) { return !s.hidden; });
+  parent.postMessage({ pluginMessage: { type: "set-all-visibility", visible: !anyVisible } }, "*");
+}
+
+function updateToggleAllBtn() {
+  var btn = document.getElementById("btnToggleAllVis");
+  if (!btn) return;
+  var t = I18N[currentLang];
+  if (!cachedSpecs || cachedSpecs.length === 0) {
+    btn.style.display = "none";
+    return;
+  }
+  btn.style.display = "";
+  var allHidden = cachedSpecs.every(function(s) { return s.hidden; });
+  if (allHidden) {
+    btn.setAttribute("data-tip", t.tip_show_all || "Show all annotations on canvas");
+    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2l12 12"/><path d="M6.5 6.5a2.5 2.5 0 003.5 3.5"/><path d="M4.2 4.2C2.4 5.6 1 8 1 8s2.5 5 7 5c1.4 0 2.6-.5 3.6-1.2"/><path d="M11 4.7C13.3 6 15 8 15 8s-2.5 5-7 5c-.5 0-1-.1-1.5-.2"/></svg>';
+  } else {
+    btn.setAttribute("data-tip", t.tip_hide_all || "Hide all annotations on canvas");
+    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2.5"/></svg>';
+  }
 }
 
 function insertTag(tag) {
@@ -1164,6 +1231,12 @@ window.onmessage = function(e) {
   }
   if (msg.type === "rebuild-done") {
     parent.postMessage({ pluginMessage: { type: "list-specs" } }, "*");
+  }
+  if (msg.type === "visibility-changed") {
+    refreshList();
+  }
+  if (msg.type === "all-visibility-changed") {
+    refreshList();
   }
   if (msg.type === "page-changed") {
     // 페이지 이동 시 Annotations 탭 자동 갱신

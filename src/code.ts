@@ -88,6 +88,8 @@ type UIMessage =
   | { type: "select-node"; nodeId: string }
   | { type: "delete-spec"; nodeId?: string; num?: string }
   | { type: "rebuild-index" }
+  | { type: "toggle-visibility"; num: string; visible: boolean }
+  | { type: "set-all-visibility"; visible: boolean }
   | { type: "cancel" };
 
 // ── Relaunch: 패널/마커/대상 노드에서 플러그인 열기 ──
@@ -637,6 +639,60 @@ function buildHiddenDataMap(): Map<string, HiddenData> {
 }
 
 // ──────────────────────────────────────
+// 어노테이션 숨김/표시 관리
+// ──────────────────────────────────────
+function getHiddenNums(): Set<number> {
+  const raw: string = figma.currentPage.getPluginData("airHiddenNums") || "";
+  if (!raw) return new Set();
+  try {
+    const arr: number[] = JSON.parse(raw);
+    if (!Array.isArray(arr)) return new Set();
+    return new Set(arr);
+  } catch(e) {
+    return new Set();
+  }
+}
+
+function setHiddenNums(nums: Set<number>): void {
+  const arr: number[] = [];
+  nums.forEach(function(n: number) { arr.push(n); });
+  arr.sort(function(a: number, b: number) { return a - b; });
+  figma.currentPage.setPluginData("airHiddenNums", JSON.stringify(arr));
+}
+
+async function setAnnotationVisibility(num: number, isVisible: boolean): Promise<void> {
+  const panelName: string = "📋 Annotation: " + num;
+  const oldPanelName: string = "📋 Spec: " + num;
+  const markerName: string = "🏷️ " + num;
+
+  let targetNodeId: string = "";
+  const children: readonly SceneNode[] = figma.currentPage.children;
+  for (let i = 0; i < children.length; i++) {
+    const c: SceneNode = children[i];
+    if (c.name === panelName || c.name === oldPanelName) {
+      c.visible = isVisible;
+      try { targetNodeId = c.getPluginData("targetNodeId") || ""; } catch(e) {}
+    }
+    if (c.name === markerName) {
+      c.visible = isVisible;
+    }
+  }
+
+  // Check target node's children for nested marker badge
+  if (targetNodeId) {
+    const targetNode: BaseNode | null = await figma.getNodeByIdAsync(targetNodeId);
+    if (targetNode && "children" in targetNode) {
+      const tChildren: readonly SceneNode[] = (targetNode as FrameNode).children;
+      for (let k = 0; k < tChildren.length; k++) {
+        if (tChildren[k].name === markerName) {
+          tChildren[k].visible = isVisible;
+        }
+      }
+    }
+  }
+}
+
+// ──────────────────────────────────────
 // 📑 AI용 스펙 인덱스 (MCP 연동)
 // ──────────────────────────────────────
 const INDEX_NAME: string = "📑 AIR: AI-Readable Annotator Index";
@@ -644,6 +700,7 @@ const INDEX_NAME: string = "📑 AIR: AI-Readable Annotator Index";
 async function updateSpecIndex(): Promise<void> {
   // hiddenMap 먼저 빌드 (단일 페이지 스캔)
   const hiddenMap: Map<string, HiddenData> = buildHiddenDataMap();
+  const hiddenNums: Set<number> = getHiddenNums();
 
   // 단일 패스: 인덱스 제거 + 숨김 노드/패널 동시 수집
   interface PendingHidden {
@@ -786,7 +843,12 @@ async function updateSpecIndex(): Promise<void> {
 
   for (let s = 0; s < specs.length; s++) {
     const sp: SpecInfo = specs[s];
-    let header: string = "[AIR-" + sp.num + "] " + sp.title;
+    let header: string = "";
+    if (hiddenNums.has(sp.num)) {
+      header = "[HIDDEN] [AIR-" + sp.num + "] " + sp.title;
+    } else {
+      header = "[AIR-" + sp.num + "] " + sp.title;
+    }
     if (sp.nodeType) header += "  (" + sp.nodeType + ", " + sp.nodeId + ")";
     lines.push(header);
 
@@ -801,7 +863,16 @@ async function updateSpecIndex(): Promise<void> {
   }
 
   lines.push("════════════════════════════════");
-  lines.push("총 " + specs.length + "개 스펙 | AIR: AI-Readable Annotator v1");
+  let footerLine: string = "총 " + specs.length + "개 스펙";
+  let hiddenCount: number = 0;
+  for (let hci = 0; hci < specs.length; hci++) {
+    if (hiddenNums.has(specs[hci].num)) hiddenCount++;
+  }
+  if (hiddenCount > 0) {
+    footerLine += " (" + hiddenCount + "개 숨김)";
+  }
+  footerLine += " | AIR: AI-Readable Annotator v1";
+  lines.push(footerLine);
 
   const content: string = lines.join("\n");
 
@@ -1039,6 +1110,13 @@ async function writeSpec(nodeId: string, title: string, desc: string, num: strin
     // 대상 노드에도 Relaunch 버튼 설정
     (node as SceneNode).setRelaunchData({ edit: '' });
 
+    // Clear from hidden set if present
+    const writeHiddenSet: Set<number> = getHiddenNums();
+    if (writeHiddenSet.has(parseInt(currentNum))) {
+      writeHiddenSet.delete(parseInt(currentNum));
+      setHiddenNums(writeHiddenSet);
+    }
+
     return { ok: true };
   } catch(e: unknown) {
     return { ok: false, error: (e as Error).message };
@@ -1177,6 +1255,15 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
       }
       rebuilt++;
     }
+    // Restore hidden state after rebuild
+    const rebuildHiddenNums: Set<number> = getHiddenNums();
+    if (rebuildHiddenNums.size > 0) {
+      for (let hi = 0; hi < allSpecs.length; hi++) {
+        if (rebuildHiddenNums.has(parseInt(allSpecs[hi].num))) {
+          await setAnnotationVisibility(parseInt(allSpecs[hi].num), false);
+        }
+      }
+    }
     const themeLabel: string = currentTheme === "dark" ? "Dark" : "Light";
     figma.notify("🎨 " + themeLabel + " theme applied to " + rebuilt + " panel(s)");
     figma.ui.postMessage({ type: "rebuild-done" });
@@ -1189,10 +1276,11 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
   if (msg.type === "read-selection") { readSelectedDesc(); }
 
   if (msg.type === "list-specs") {
-    const specs: Array<{ num: string; title: string; color: string; desc: string; targetNodeId: string; preview: string }> = [];
+    const specs: Array<{ num: string; title: string; color: string; desc: string; targetNodeId: string; preview: string; hidden: boolean }> = [];
     const foundNums: Record<string, boolean> = {};
     const children: readonly SceneNode[] = figma.currentPage.children;
     const listHiddenMap: Map<string, HiddenData> = buildHiddenDataMap();
+    const listHiddenNums: Set<number> = getHiddenNums();
 
     // 1차: 숨김 데이터 노드에서 스캔 (기존 방식)
     for (let i = 0; i < children.length; i++) {
@@ -1218,7 +1306,8 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
           color: data ? data.color : "",
           desc: data ? data.desc : "",
           targetNodeId: targetId,
-          preview: data && data.desc ? data.desc.split("\n").slice(0, 2).join(" ") : ""
+          preview: data && data.desc ? data.desc.split("\n").slice(0, 2).join(" ") : "",
+          hidden: listHiddenNums.has(parseInt(num))
         });
         foundNums[num] = true;
       }
@@ -1256,7 +1345,8 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
         color: pColor,
         desc: pDesc,
         targetNodeId: pTargetId,
-        preview: pDesc ? pDesc.split("\n").slice(0, 2).join(" ") : ""
+        preview: pDesc ? pDesc.split("\n").slice(0, 2).join(" ") : "",
+        hidden: listHiddenNums.has(parseInt(pnum))
       });
       foundNums[pnum] = true;
 
@@ -1331,6 +1421,13 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
     // 패널 + 마커 + 데이터 노드 제거
     await removeExistingArtifacts(num);
 
+    // Clean hidden set for deleted num
+    const delHiddenSet: Set<number> = getHiddenNums();
+    if (delHiddenSet.has(parseInt(num))) {
+      delHiddenSet.delete(parseInt(num));
+      setHiddenNums(delHiddenSet);
+    }
+
     // 노드 이름에서 [AIR-N] 접두사 제거
     if (node) {
       node.name = stripPrefix(node.name);
@@ -1345,6 +1442,63 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
   if (msg.type === "rebuild-index") {
     await updateSpecIndex();
     figma.notify("📑 AI용 스펙 인덱스를 최신 상태로 갱신했어요");
+  }
+
+  if (msg.type === "toggle-visibility") {
+    const num: number = parseInt(msg.num);
+    const hiddenSet: Set<number> = getHiddenNums();
+    if (msg.visible) {
+      hiddenSet.delete(num);
+    } else {
+      hiddenSet.add(num);
+    }
+    setHiddenNums(hiddenSet);
+    await setAnnotationVisibility(num, msg.visible);
+    figma.ui.postMessage({ type: "visibility-changed", num: msg.num, visible: msg.visible });
+    await updateSpecIndex();
+  }
+
+  if (msg.type === "set-all-visibility") {
+    const hiddenSet: Set<number> = getHiddenNums();
+    const allNums: number[] = [];
+
+    // Collect all annotation numbers from hidden data + panel fallback
+    const children: readonly SceneNode[] = figma.currentPage.children;
+    for (let i = 0; i < children.length; i++) {
+      const c: SceneNode = children[i];
+      const dm: RegExpMatchArray | null = c.name.match(/__specData_(\d+)__/);
+      if (dm) { allNums.push(parseInt(dm[1])); continue; }
+      const pm: RegExpMatchArray | null = c.name.match(/^📋 (?:Annotation|Spec): (\d+)/);
+      if (pm) { allNums.push(parseInt(pm[1])); }
+    }
+
+    // Deduplicate
+    const uniqueNums: number[] = [];
+    const seen: Record<number, boolean> = {};
+    for (let i = 0; i < allNums.length; i++) {
+      if (!seen[allNums[i]]) {
+        uniqueNums.push(allNums[i]);
+        seen[allNums[i]] = true;
+      }
+    }
+
+    if (msg.visible) {
+      hiddenSet.clear();
+    } else {
+      for (let i = 0; i < uniqueNums.length; i++) {
+        hiddenSet.add(uniqueNums[i]);
+      }
+    }
+    setHiddenNums(hiddenSet);
+
+    for (let i = 0; i < uniqueNums.length; i++) {
+      await setAnnotationVisibility(uniqueNums[i], msg.visible);
+    }
+
+    const label: string = msg.visible ? "shown" : "hidden";
+    figma.notify("👁️ " + uniqueNums.length + " annotation(s) " + label);
+    figma.ui.postMessage({ type: "all-visibility-changed", visible: msg.visible });
+    await updateSpecIndex();
   }
 
   if (msg.type === "cancel") { figma.closePlugin(); }

@@ -526,10 +526,65 @@
     }
     return map;
   }
+  function getHiddenNums() {
+    const raw = figma.currentPage.getPluginData("airHiddenNums") || "";
+    if (!raw) return /* @__PURE__ */ new Set();
+    try {
+      const arr = JSON.parse(raw);
+      if (!Array.isArray(arr)) return /* @__PURE__ */ new Set();
+      return new Set(arr);
+    } catch (e) {
+      return /* @__PURE__ */ new Set();
+    }
+  }
+  function setHiddenNums(nums) {
+    const arr = [];
+    nums.forEach(function(n) {
+      arr.push(n);
+    });
+    arr.sort(function(a, b) {
+      return a - b;
+    });
+    figma.currentPage.setPluginData("airHiddenNums", JSON.stringify(arr));
+  }
+  function setAnnotationVisibility(num, isVisible) {
+    return __async(this, null, function* () {
+      const panelName = "📋 Annotation: " + num;
+      const oldPanelName = "📋 Spec: " + num;
+      const markerName = "🏷️ " + num;
+      let targetNodeId = "";
+      const children = figma.currentPage.children;
+      for (let i = 0; i < children.length; i++) {
+        const c = children[i];
+        if (c.name === panelName || c.name === oldPanelName) {
+          c.visible = isVisible;
+          try {
+            targetNodeId = c.getPluginData("targetNodeId") || "";
+          } catch (e) {
+          }
+        }
+        if (c.name === markerName) {
+          c.visible = isVisible;
+        }
+      }
+      if (targetNodeId) {
+        const targetNode = yield figma.getNodeByIdAsync(targetNodeId);
+        if (targetNode && "children" in targetNode) {
+          const tChildren = targetNode.children;
+          for (let k = 0; k < tChildren.length; k++) {
+            if (tChildren[k].name === markerName) {
+              tChildren[k].visible = isVisible;
+            }
+          }
+        }
+      }
+    });
+  }
   var INDEX_NAME = "📑 AIR: AI-Readable Annotator Index";
   function updateSpecIndex() {
     return __async(this, null, function* () {
       const hiddenMap = buildHiddenDataMap();
+      const hiddenNums = getHiddenNums();
       const pendingHidden = [];
       const pendingFallback = [];
       const foundNums = {};
@@ -641,7 +696,12 @@
       lines.push("════════════════════════════════");
       for (let s = 0; s < specs.length; s++) {
         const sp = specs[s];
-        let header = "[AIR-" + sp.num + "] " + sp.title;
+        let header = "";
+        if (hiddenNums.has(sp.num)) {
+          header = "[HIDDEN] [AIR-" + sp.num + "] " + sp.title;
+        } else {
+          header = "[AIR-" + sp.num + "] " + sp.title;
+        }
         if (sp.nodeType) header += "  (" + sp.nodeType + ", " + sp.nodeId + ")";
         lines.push(header);
         if (sp.desc) {
@@ -654,7 +714,16 @@
         lines.push("");
       }
       lines.push("════════════════════════════════");
-      lines.push("총 " + specs.length + "개 스펙 | AIR: AI-Readable Annotator v1");
+      let footerLine = "총 " + specs.length + "개 스펙";
+      let hiddenCount = 0;
+      for (let hci = 0; hci < specs.length; hci++) {
+        if (hiddenNums.has(specs[hci].num)) hiddenCount++;
+      }
+      if (hiddenCount > 0) {
+        footerLine += " (" + hiddenCount + "개 숨김)";
+      }
+      footerLine += " | AIR: AI-Readable Annotator v1";
+      lines.push(footerLine);
       const content = lines.join("\n");
       const idx = figma.createFrame();
       idx.name = INDEX_NAME;
@@ -856,6 +925,11 @@
           panel.children[ci].locked = true;
         }
         node.setRelaunchData({ edit: "" });
+        const writeHiddenSet = getHiddenNums();
+        if (writeHiddenSet.has(parseInt(currentNum))) {
+          writeHiddenSet.delete(parseInt(currentNum));
+          setHiddenNums(writeHiddenSet);
+        }
         return { ok: true };
       } catch (e) {
         return { ok: false, error: e.message };
@@ -996,6 +1070,14 @@
           }
           rebuilt++;
         }
+        const rebuildHiddenNums = getHiddenNums();
+        if (rebuildHiddenNums.size > 0) {
+          for (let hi = 0; hi < allSpecs.length; hi++) {
+            if (rebuildHiddenNums.has(parseInt(allSpecs[hi].num))) {
+              yield setAnnotationVisibility(parseInt(allSpecs[hi].num), false);
+            }
+          }
+        }
         const themeLabel = currentTheme === "dark" ? "Dark" : "Light";
         figma.notify("🎨 " + themeLabel + " theme applied to " + rebuilt + " panel(s)");
         figma.ui.postMessage({ type: "rebuild-done" });
@@ -1011,6 +1093,7 @@
         const foundNums = {};
         const children = figma.currentPage.children;
         const listHiddenMap = buildHiddenDataMap();
+        const listHiddenNums = getHiddenNums();
         for (let i = 0; i < children.length; i++) {
           const c = children[i];
           if (c.name.indexOf("__specData_") === 0 && c.type === "TEXT") {
@@ -1037,7 +1120,8 @@
               color: data ? data.color : "",
               desc: data ? data.desc : "",
               targetNodeId: targetId,
-              preview: data && data.desc ? data.desc.split("\n").slice(0, 2).join(" ") : ""
+              preview: data && data.desc ? data.desc.split("\n").slice(0, 2).join(" ") : "",
+              hidden: listHiddenNums.has(parseInt(num))
             });
             foundNums[num] = true;
           }
@@ -1072,7 +1156,8 @@
             color: pColor,
             desc: pDesc,
             targetNodeId: pTargetId,
-            preview: pDesc ? pDesc.split("\n").slice(0, 2).join(" ") : ""
+            preview: pDesc ? pDesc.split("\n").slice(0, 2).join(" ") : "",
+            hidden: listHiddenNums.has(parseInt(pnum))
           });
           foundNums[pnum] = true;
           if (pDesc && pTargetId) {
@@ -1136,6 +1221,11 @@
           return;
         }
         yield removeExistingArtifacts(num);
+        const delHiddenSet = getHiddenNums();
+        if (delHiddenSet.has(parseInt(num))) {
+          delHiddenSet.delete(parseInt(num));
+          setHiddenNums(delHiddenSet);
+        }
         if (node) {
           node.name = stripPrefix(node.name);
         }
@@ -1147,6 +1237,59 @@
       if (msg.type === "rebuild-index") {
         yield updateSpecIndex();
         figma.notify("📑 AI용 스펙 인덱스를 최신 상태로 갱신했어요");
+      }
+      if (msg.type === "toggle-visibility") {
+        const num = parseInt(msg.num);
+        const hiddenSet = getHiddenNums();
+        if (msg.visible) {
+          hiddenSet.delete(num);
+        } else {
+          hiddenSet.add(num);
+        }
+        setHiddenNums(hiddenSet);
+        yield setAnnotationVisibility(num, msg.visible);
+        figma.ui.postMessage({ type: "visibility-changed", num: msg.num, visible: msg.visible });
+        yield updateSpecIndex();
+      }
+      if (msg.type === "set-all-visibility") {
+        const hiddenSet = getHiddenNums();
+        const allNums = [];
+        const children = figma.currentPage.children;
+        for (let i = 0; i < children.length; i++) {
+          const c = children[i];
+          const dm = c.name.match(/__specData_(\d+)__/);
+          if (dm) {
+            allNums.push(parseInt(dm[1]));
+            continue;
+          }
+          const pm = c.name.match(/^📋 (?:Annotation|Spec): (\d+)/);
+          if (pm) {
+            allNums.push(parseInt(pm[1]));
+          }
+        }
+        const uniqueNums = [];
+        const seen = {};
+        for (let i = 0; i < allNums.length; i++) {
+          if (!seen[allNums[i]]) {
+            uniqueNums.push(allNums[i]);
+            seen[allNums[i]] = true;
+          }
+        }
+        if (msg.visible) {
+          hiddenSet.clear();
+        } else {
+          for (let i = 0; i < uniqueNums.length; i++) {
+            hiddenSet.add(uniqueNums[i]);
+          }
+        }
+        setHiddenNums(hiddenSet);
+        for (let i = 0; i < uniqueNums.length; i++) {
+          yield setAnnotationVisibility(uniqueNums[i], msg.visible);
+        }
+        const label = msg.visible ? "shown" : "hidden";
+        figma.notify("👁️ " + uniqueNums.length + " annotation(s) " + label);
+        figma.ui.postMessage({ type: "all-visibility-changed", visible: msg.visible });
+        yield updateSpecIndex();
       }
       if (msg.type === "cancel") {
         figma.closePlugin();

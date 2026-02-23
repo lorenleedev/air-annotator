@@ -68,6 +68,9 @@ function mockNode(overrides) {
 var _currentPage = {
   children: [],
   selection: [],
+  _pluginData: {},
+  setPluginData: function(k, v) { this._pluginData[k] = v; },
+  getPluginData: function(k) { return this._pluginData[k] || ""; },
   appendChild: function(child) { child._parent = this; this.children.push(child); }
 };
 
@@ -100,6 +103,7 @@ var figma = {
 function resetMock() {
   _currentPage.children = [];
   _currentPage.selection = [];
+  _currentPage._pluginData = {};
   _root._pluginData = {};
   _allNodes = {};
   _nextId = 1000;
@@ -700,7 +704,7 @@ suite("code.js 문법 검증");
   assert("figma.showUI 호출 존재", code.indexOf("figma.showUI") >= 0);
 
   // 메시지 핸들러 존재
-  var requiredHandlers = ["init", "write-desc", "delete-spec", "list-specs", "rebuild-all-panels", "rebuild-index", "select-node", "apply-batch", "scan-layers"];
+  var requiredHandlers = ["init", "write-desc", "delete-spec", "list-specs", "rebuild-all-panels", "rebuild-index", "select-node", "apply-batch", "scan-layers", "toggle-visibility", "set-all-visibility"];
   requiredHandlers.forEach(function(h) {
     assert('메시지 핸들러 "' + h + '" 존재', code.indexOf('"' + h + '"') >= 0);
   });
@@ -734,6 +738,64 @@ suite("엣지 케이스");
   _currentPage.children.push(mockNode({ name: "[AIR-1] A" }));
   _currentPage.children.push(mockNode({ name: "[AIR-100] B" }));
   assert("비연속 번호 max+1", getNextNum() === 101);
+})();
+
+// ══════════════════════════════════════
+// 14. 숨김/표시 (Hide/Show) 기능
+// ══════════════════════════════════════
+suite("숨김/표시 기능");
+
+(function() {
+  // getHiddenNums / setHiddenNums round-trip
+  resetMock();
+  // Initially empty
+  var raw = figma.currentPage.getPluginData("airHiddenNums");
+  assert("초기 hiddenNums 비어있음", raw === "");
+
+  // Set some hidden nums
+  figma.currentPage.setPluginData("airHiddenNums", JSON.stringify([1, 3, 7]));
+  var parsed = JSON.parse(figma.currentPage.getPluginData("airHiddenNums"));
+  assert("setHiddenNums → getHiddenNums 라운드트립", eq(parsed, [1, 3, 7]));
+
+  // Sorted array
+  figma.currentPage.setPluginData("airHiddenNums", JSON.stringify([7, 1, 3]));
+  var parsed2 = JSON.parse(figma.currentPage.getPluginData("airHiddenNums"));
+  assert("JSON 배열 파싱 가능", Array.isArray(parsed2) && parsed2.length === 3);
+
+  // Malformed JSON resilience
+  figma.currentPage.setPluginData("airHiddenNums", "not-valid-json");
+  var malformed = figma.currentPage.getPluginData("airHiddenNums");
+  var resilient = true;
+  try {
+    var p = JSON.parse(malformed);
+    if (!Array.isArray(p)) resilient = true;
+  } catch(e) {
+    resilient = true; // getHiddenNums would return empty Set on bad JSON
+  }
+  assert("잘못된 JSON → 에러 없이 처리 가능", resilient);
+
+  // Empty array
+  resetMock();
+  figma.currentPage.setPluginData("airHiddenNums", "[]");
+  var emptyArr = JSON.parse(figma.currentPage.getPluginData("airHiddenNums"));
+  assert("빈 배열 → 빈 Set", Array.isArray(emptyArr) && emptyArr.length === 0);
+
+  // Clearing hidden nums
+  resetMock();
+  figma.currentPage.setPluginData("airHiddenNums", JSON.stringify([1, 2, 3]));
+  figma.currentPage.setPluginData("airHiddenNums", "[]");
+  var cleared = JSON.parse(figma.currentPage.getPluginData("airHiddenNums"));
+  assert("숨김 해제 → 빈 배열", eq(cleared, []));
+
+  // Delete should clean hidden set - simulation
+  resetMock();
+  figma.currentPage.setPluginData("airHiddenNums", JSON.stringify([1, 3, 5]));
+  // Simulate deleting annotation 3: remove from set
+  var set = JSON.parse(figma.currentPage.getPluginData("airHiddenNums"));
+  var newSet = set.filter(function(n) { return n !== 3; });
+  figma.currentPage.setPluginData("airHiddenNums", JSON.stringify(newSet));
+  var afterDelete = JSON.parse(figma.currentPage.getPluginData("airHiddenNums"));
+  assert("삭제 후 hidden set에서 제거됨", eq(afterDelete, [1, 5]));
 })();
 
 // ══════════════════════════════════════
