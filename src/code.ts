@@ -517,8 +517,8 @@ function getNextNum(): number {
             children[i].name.match(/^📋 Spec: (\d+)/);
     if (m) { const n: number = parseInt(m[1]); if (n > max) max = n; }
   }
-  // 캐시 갱신
-  figma.currentPage.setPluginData("airMaxNum", String(max));
+  // 캐시 갱신 (반환하는 번호를 저장해야 신뢰 경로와 일치)
+  figma.currentPage.setPluginData("airMaxNum", String(max + 1));
   return max + 1;
 }
 

@@ -407,7 +407,7 @@
         if (n > max) max = n;
       }
     }
-    figma.currentPage.setPluginData("airMaxNum", String(max));
+    figma.currentPage.setPluginData("airMaxNum", String(max + 1));
     return max + 1;
   }
   function removeExistingArtifacts(num) {
