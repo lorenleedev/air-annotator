@@ -392,8 +392,13 @@
     return name.replace(/^\[AIR-\d+\]\s*/, "").replace(/\s*\|.*$/, "");
   }
   function getNextNum() {
-    const cached = parseInt(figma.currentPage.getPluginData("airMaxNum") || "0");
-    let max = cached;
+    const cached = figma.currentPage.getPluginData("airMaxNum") || "";
+    if (cached && parseInt(cached) > 0) {
+      const next = parseInt(cached) + 1;
+      figma.currentPage.setPluginData("airMaxNum", String(next));
+      return next;
+    }
+    let max = 0;
     const children = figma.currentPage.children;
     for (let i = 0; i < children.length; i++) {
       const m = children[i].name.match(/^\[AIR-(\d+)\]/) || children[i].name.match(/^📋 Annotation: (\d+)/) || children[i].name.match(/^📋 Spec: (\d+)/);
@@ -406,30 +411,39 @@
     return max + 1;
   }
   function removeExistingArtifacts(num) {
-    const panelName = "📋 Annotation: " + num;
-    const oldPanelName = "📋 Spec: " + num;
-    const markerName = "🏷️ " + num;
-    const dataName = "__specData_" + num + "__";
-    const children = figma.currentPage.children;
-    for (let i = children.length - 1; i >= 0; i--) {
-      const n = children[i].name;
-      if (n === panelName || n === oldPanelName || n === markerName || n === dataName) children[i].remove();
-    }
-    function removeDeep(node) {
-      if (!("children" in node)) return;
-      try {
-        const parent = node;
-        for (let i = parent.children.length - 1; i >= 0; i--) {
-          const cn = parent.children[i].name;
-          if (cn === markerName || cn === dataName) parent.children[i].remove();
-          else removeDeep(parent.children[i]);
+    return __async(this, null, function* () {
+      const panelName = "📋 Annotation: " + num;
+      const oldPanelName = "📋 Spec: " + num;
+      const markerName = "🏷️ " + num;
+      const dataName = "__specData_" + num + "__";
+      let targetNodeId = "";
+      const children = figma.currentPage.children;
+      for (let i = children.length - 1; i >= 0; i--) {
+        const c = children[i];
+        const n = c.name;
+        if (n === panelName || n === oldPanelName) {
+          try {
+            targetNodeId = c.getPluginData("targetNodeId") || "";
+          } catch (e) {
+          }
+          c.remove();
+        } else if (n === markerName || n === dataName) {
+          c.remove();
         }
-      } catch (e) {
       }
-    }
-    for (let j = 0; j < figma.currentPage.children.length; j++) {
-      removeDeep(figma.currentPage.children[j]);
-    }
+      if (targetNodeId) {
+        const targetNode = yield figma.getNodeByIdAsync(targetNodeId);
+        if (targetNode && "children" in targetNode) {
+          const tChildren = targetNode.children;
+          for (let k = tChildren.length - 1; k >= 0; k--) {
+            const tc = tChildren[k];
+            if (tc.name === markerName) {
+              tc.remove();
+            }
+          }
+        }
+      }
+    });
   }
   function createHiddenDataNode(num, title, desc, colorHex, targetNodeId) {
     let data = "[AIRA:" + num + "]\n";
@@ -474,95 +488,145 @@
     }
     return null;
   }
+  function buildHiddenDataMap() {
+    const map = /* @__PURE__ */ new Map();
+    const children = figma.currentPage.children;
+    for (let i = 0; i < children.length; i++) {
+      const c = children[i];
+      if (c.name.indexOf("__specData_") !== 0 || c.type !== "TEXT") continue;
+      const nm = c.name.match(/__specData_(\d+)__/);
+      if (!nm) continue;
+      const raw = c.characters;
+      const headerMatch = raw.match(/^\[AIRA:(\d+)\]/);
+      if (!headerMatch) continue;
+      const lines = raw.split("\n");
+      let title = "", color = "", target = "";
+      let pastSep = false;
+      const descLines = [];
+      for (let li = 1; li < lines.length; li++) {
+        const ln = lines[li];
+        if (ln === "===") {
+          pastSep = true;
+          continue;
+        }
+        if (pastSep) {
+          descLines.push(ln);
+          continue;
+        }
+        if (ln.indexOf("title: ") === 0) {
+          title = ln.substring(7);
+        } else if (ln.indexOf("color: ") === 0) {
+          color = ln.substring(7);
+        } else if (ln.indexOf("target: ") === 0) {
+          target = ln.substring(8);
+        }
+      }
+      const desc = descLines.join("\n");
+      map.set(nm[1], { title, desc, color, target });
+    }
+    return map;
+  }
   var INDEX_NAME = "📑 AIR: AI-Readable Annotator Index";
   function updateSpecIndex() {
     return __async(this, null, function* () {
-      let children = figma.currentPage.children;
-      for (let i = children.length - 1; i >= 0; i--) {
-        if (children[i].name === INDEX_NAME) children[i].remove();
-      }
-      const specs = [];
+      const hiddenMap = buildHiddenDataMap();
+      const pendingHidden = [];
+      const pendingFallback = [];
       const foundNums = {};
-      for (let i = 0; i < figma.currentPage.children.length; i++) {
-        const c = figma.currentPage.children[i];
+      const panelTargetCache = {};
+      const pageChildren = figma.currentPage.children;
+      for (let i = pageChildren.length - 1; i >= 0; i--) {
+        const c = pageChildren[i];
+        if (c.name === INDEX_NAME) {
+          c.remove();
+          continue;
+        }
+        const fpMatch = c.name.match(/^📋 (?:Annotation|Spec): (\d+)/);
+        if (fpMatch) {
+          const fpnum = fpMatch[1];
+          let fpDesc = "", fpColor = "", fpTarget = "";
+          try {
+            fpDesc = c.getPluginData("specTags") || "";
+            fpColor = c.getPluginData("markerColor") || "";
+            fpTarget = c.getPluginData("targetNodeId") || "";
+          } catch (e) {
+          }
+          if (fpTarget) {
+            panelTargetCache[fpnum] = fpTarget;
+            pendingFallback.push({ num: fpnum, fpDesc, fpColor, fpTarget });
+          }
+          continue;
+        }
         if (c.name.indexOf("__specData_") === 0 && c.type === "TEXT") {
           const nm = c.name.match(/__specData_(\d+)__/);
           if (!nm) continue;
           const num = nm[1];
-          const data = readHiddenData(num);
+          const data = hiddenMap.get(num) || null;
           if (!data) continue;
-          let targetNodeId = data.target || "";
-          let targetType = "";
-          let targetName = "";
-          if (!targetNodeId) {
-            for (let j = 0; j < figma.currentPage.children.length; j++) {
-              const p = figma.currentPage.children[j];
-              if (p.name === "📋 Annotation: " + num || p.name === "📋 Spec: " + num) {
-                try {
-                  targetNodeId = p.getPluginData("targetNodeId") || "";
-                } catch (e) {
-                }
-                break;
-              }
-            }
-          }
-          if (targetNodeId) {
-            try {
-              const tNode = yield figma.getNodeByIdAsync(targetNodeId);
-              if (tNode) {
-                targetType = tNode.type;
-                targetName = tNode.name;
-              }
-            } catch (e) {
-            }
-          }
-          specs.push({
-            num: parseInt(num),
-            title: data.title,
-            desc: data.desc,
-            nodeId: targetNodeId,
-            nodeType: targetType,
-            nodeName: targetName
-          });
+          let targetNodeId = data.target || panelTargetCache[num] || "";
+          pendingHidden.push({ num, data, targetNodeId });
           foundNums[num] = true;
         }
       }
-      for (let fi = 0; fi < figma.currentPage.children.length; fi++) {
-        const fc = figma.currentPage.children[fi];
-        const fpMatch = fc.name.match(/^📋 (?:Annotation|Spec): (\d+)/);
-        if (!fpMatch) continue;
-        const fpnum = fpMatch[1];
-        if (foundNums[fpnum]) continue;
-        let fpDesc = "", fpColor = "", fpTarget = "";
-        try {
-          fpDesc = fc.getPluginData("specTags") || "";
-          fpColor = fc.getPluginData("markerColor") || "";
-          fpTarget = fc.getPluginData("targetNodeId") || "";
-        } catch (e) {
+      for (let i = 0; i < pendingHidden.length; i++) {
+        if (!pendingHidden[i].targetNodeId && panelTargetCache[pendingHidden[i].num]) {
+          pendingHidden[i].targetNodeId = panelTargetCache[pendingHidden[i].num];
         }
-        if (!fpTarget) continue;
+      }
+      const hiddenNodePromises = [];
+      for (let i = 0; i < pendingHidden.length; i++) {
+        if (pendingHidden[i].targetNodeId) {
+          hiddenNodePromises.push(figma.getNodeByIdAsync(pendingHidden[i].targetNodeId));
+        } else {
+          hiddenNodePromises.push(Promise.resolve(null));
+        }
+      }
+      const hiddenResolvedNodes = yield Promise.all(hiddenNodePromises);
+      const specs = [];
+      for (let i = 0; i < pendingHidden.length; i++) {
+        const ph = pendingHidden[i];
+        const tNode = hiddenResolvedNodes[i];
+        specs.push({
+          num: parseInt(ph.num),
+          title: ph.data.title,
+          desc: ph.data.desc,
+          nodeId: ph.targetNodeId,
+          nodeType: tNode ? tNode.type : "",
+          nodeName: tNode ? tNode.name : ""
+        });
+      }
+      const filteredFallback = [];
+      for (let i = 0; i < pendingFallback.length; i++) {
+        if (!foundNums[pendingFallback[i].num]) {
+          filteredFallback.push(pendingFallback[i]);
+        }
+      }
+      const fallbackNodePromises = [];
+      for (let i = 0; i < filteredFallback.length; i++) {
+        fallbackNodePromises.push(figma.getNodeByIdAsync(filteredFallback[i].fpTarget));
+      }
+      const fallbackResolvedNodes = yield Promise.all(fallbackNodePromises);
+      for (let i = 0; i < filteredFallback.length; i++) {
+        const fb = filteredFallback[i];
+        const fpNode = fallbackResolvedNodes[i];
         let fpTitle = "", fpType = "", fpName = "";
-        try {
-          const fpNode = yield figma.getNodeByIdAsync(fpTarget);
-          if (fpNode) {
-            const fptm = fpNode.name.match(/^\[AIR-\d+\]\s*(.*?)(\s*\|.*)?$/);
-            fpTitle = fptm ? fptm[1] : fpNode.name;
-            fpType = fpNode.type;
-            fpName = fpNode.name;
-          }
-        } catch (e) {
+        if (fpNode) {
+          const fptm = fpNode.name.match(/^\[AIR-\d+\]\s*(.*?)(\s*\|.*)?$/);
+          fpTitle = fptm ? fptm[1] : fpNode.name;
+          fpType = fpNode.type;
+          fpName = fpNode.name;
         }
         specs.push({
-          num: parseInt(fpnum),
+          num: parseInt(fb.num),
           title: fpTitle,
-          desc: fpDesc,
-          nodeId: fpTarget,
+          desc: fb.fpDesc,
+          nodeId: fb.fpTarget,
           nodeType: fpType,
           nodeName: fpName
         });
-        foundNums[fpnum] = true;
+        foundNums[fb.num] = true;
         try {
-          createHiddenDataNode(fpnum, fpTitle, fpDesc, fpColor, fpTarget);
+          createHiddenDataNode(fb.num, fpTitle, fb.fpDesc, fb.fpColor, fb.fpTarget);
         } catch (e) {
         }
       }
@@ -774,7 +838,7 @@
             break;
           }
         }
-        removeExistingArtifacts(currentNum);
+        yield removeExistingArtifacts(currentNum);
         if (!desc || !desc.trim()) return { ok: true };
         const panel = createSpecPanel(title, desc, currentNum, node, markerColor);
         figma.currentPage.appendChild(panel);
@@ -845,13 +909,14 @@
         const children = figma.currentPage.children;
         const allSpecs = [];
         const foundNums = {};
+        const rebuildHiddenMap = buildHiddenDataMap();
         for (let ri = 0; ri < children.length; ri++) {
           const rc = children[ri];
           if (rc.name.indexOf("__specData_") === 0 && rc.type === "TEXT") {
             const rm = rc.name.match(/__specData_(\d+)__/);
             if (!rm) continue;
             const rnum = rm[1];
-            const rdata = readHiddenData(rnum);
+            const rdata = rebuildHiddenMap.get(rnum) || null;
             if (rdata) {
               allSpecs.push({ num: rnum, data: rdata });
               foundNums[rnum] = true;
@@ -945,13 +1010,14 @@
         const specs = [];
         const foundNums = {};
         const children = figma.currentPage.children;
+        const listHiddenMap = buildHiddenDataMap();
         for (let i = 0; i < children.length; i++) {
           const c = children[i];
           if (c.name.indexOf("__specData_") === 0 && c.type === "TEXT") {
             const numMatch = c.name.match(/__specData_(\d+)__/);
             if (!numMatch) continue;
             const num = numMatch[1];
-            const data = readHiddenData(num);
+            const data = listHiddenMap.get(num) || null;
             let targetId = data && data.target ? data.target : "";
             if (!targetId) {
               for (let j = 0; j < children.length; j++) {
@@ -1036,9 +1102,9 @@
         const result = yield writeSpec(msg.nodeId, msg.title || "", msg.desc, existingNum, msg.color || "");
         if (result.ok) {
           figma.notify("✅ [AIR-" + existingNum + "] " + (msg.title || "저장 완료"));
-          yield updateSpecIndex();
           figma.ui.postMessage({ type: "write-success", nodeId: msg.nodeId });
           readSelectedDesc();
+          updateSpecIndex();
         } else {
           figma.notify("❌ " + result.error, { error: true });
         }
@@ -1047,9 +1113,9 @@
         const result = yield applyBatch(msg.mappings);
         const notice = "✅ " + result.success + "개 저장 완료" + (result.fail > 0 ? " / " + result.fail + "개 실패" : "");
         figma.notify(notice);
-        yield updateSpecIndex();
         figma.ui.postMessage({ type: "batch-done", result });
         figma.ui.postMessage({ type: "layers-scanned", layers: scanLayers(figma.currentPage, 0) });
+        updateSpecIndex();
       }
       if (msg.type === "select-node") {
         const node = yield figma.getNodeByIdAsync(msg.nodeId);
@@ -1069,14 +1135,14 @@
           figma.notify("❌ 삭제할 어노테이션을 찾을 수 없습니다.", { error: true });
           return;
         }
-        removeExistingArtifacts(num);
+        yield removeExistingArtifacts(num);
         if (node) {
           node.name = stripPrefix(node.name);
         }
-        yield updateSpecIndex();
         figma.notify("🗑️ [AIR-" + num + "] 어노테이션 삭제 완료");
         figma.ui.postMessage({ type: "delete-done", num });
         readSelectedDesc();
+        updateSpecIndex();
       }
       if (msg.type === "rebuild-index") {
         yield updateSpecIndex();

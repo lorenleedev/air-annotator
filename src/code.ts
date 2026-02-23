@@ -501,9 +501,15 @@ function stripPrefix(name: string): string {
 
 function getNextNum(): number {
   // 캐시된 최대 번호 확인 (성능 최적화)
-  const cached: number = parseInt(figma.currentPage.getPluginData("airMaxNum") || "0");
-  let max: number = cached;
-  // 캐시 이후 추가된 번호가 있는지 빠르게 확인
+  const cached: string = figma.currentPage.getPluginData("airMaxNum") || "";
+  if (cached && parseInt(cached) > 0) {
+    // 캐시가 있고 유효하면 캐시를 신뢰하고 다음 번호 반환
+    const next: number = parseInt(cached) + 1;
+    figma.currentPage.setPluginData("airMaxNum", String(next));
+    return next;
+  }
+  // 캐시가 없거나 0이면 전체 스캔 수행
+  let max: number = 0;
   const children: readonly SceneNode[] = figma.currentPage.children;
   for (let i = 0; i < children.length; i++) {
     const m: RegExpMatchArray | null = children[i].name.match(/^\[AIR-(\d+)\]/) ||
@@ -519,31 +525,37 @@ function getNextNum(): number {
 // ──────────────────────────────────────
 // 기존 산출물 제거
 // ──────────────────────────────────────
-function removeExistingArtifacts(num: string | number): void {
+async function removeExistingArtifacts(num: string | number): Promise<void> {
   const panelName: string = "📋 Annotation: " + num;
   const oldPanelName: string = "📋 Spec: " + num;  // 마이그레이션 호환
   const markerName: string = "🏷️ " + num;
   const dataName: string = "__specData_" + num + "__";
 
+  let targetNodeId: string = "";
   const children: readonly SceneNode[] = figma.currentPage.children;
   for (let i = children.length - 1; i >= 0; i--) {
-    const n: string = children[i].name;
-    if (n === panelName || n === oldPanelName || n === markerName || n === dataName) children[i].remove();
+    const c: SceneNode = children[i];
+    const n: string = c.name;
+    if (n === panelName || n === oldPanelName) {
+      try { targetNodeId = c.getPluginData("targetNodeId") || ""; } catch(e) {}
+      c.remove();
+    } else if (n === markerName || n === dataName) {
+      c.remove();
+    }
   }
 
-  function removeDeep(node: SceneNode): void {
-    if (!("children" in node)) return;
-    try {
-      const parent = node as SceneNode & ChildrenMixin;
-      for (let i = parent.children.length - 1; i >= 0; i--) {
-        const cn: string = parent.children[i].name;
-        if (cn === markerName || cn === dataName) parent.children[i].remove();
-        else removeDeep(parent.children[i]);
+  // Check target node's direct children for nested marker badge
+  if (targetNodeId) {
+    const targetNode: BaseNode | null = await figma.getNodeByIdAsync(targetNodeId);
+    if (targetNode && "children" in targetNode) {
+      const tChildren: readonly SceneNode[] = (targetNode as FrameNode).children;
+      for (let k = tChildren.length - 1; k >= 0; k--) {
+        const tc: SceneNode = tChildren[k];
+        if (tc.name === markerName) {
+          tc.remove();
+        }
       }
-    } catch(e) {}
-  }
-  for (let j = 0; j < figma.currentPage.children.length; j++) {
-    removeDeep(figma.currentPage.children[j]);
+    }
   }
 }
 
@@ -595,106 +607,171 @@ function readHiddenData(num: string | number): HiddenData | null {
   return null;
 }
 
+function buildHiddenDataMap(): Map<string, HiddenData> {
+  const map: Map<string, HiddenData> = new Map();
+  const children: readonly SceneNode[] = figma.currentPage.children;
+  for (let i = 0; i < children.length; i++) {
+    const c: SceneNode = children[i];
+    if (c.name.indexOf("__specData_") !== 0 || c.type !== "TEXT") continue;
+    const nm: RegExpMatchArray | null = c.name.match(/__specData_(\d+)__/);
+    if (!nm) continue;
+    const raw: string = (c as TextNode).characters;
+    const headerMatch: RegExpMatchArray | null = raw.match(/^\[AIRA:(\d+)\]/);
+    if (!headerMatch) continue;
+    const lines: string[] = raw.split("\n");
+    let title: string = "", color: string = "", target: string = "";
+    let pastSep: boolean = false;
+    const descLines: string[] = [];
+    for (let li = 1; li < lines.length; li++) {
+      const ln: string = lines[li];
+      if (ln === "===") { pastSep = true; continue; }
+      if (pastSep) { descLines.push(ln); continue; }
+      if (ln.indexOf("title: ") === 0) { title = ln.substring(7); }
+      else if (ln.indexOf("color: ") === 0) { color = ln.substring(7); }
+      else if (ln.indexOf("target: ") === 0) { target = ln.substring(8); }
+    }
+    const desc: string = descLines.join("\n");
+    map.set(nm[1], { title: title, desc: desc, color: color, target: target });
+  }
+  return map;
+}
+
 // ──────────────────────────────────────
 // 📑 AI용 스펙 인덱스 (MCP 연동)
 // ──────────────────────────────────────
 const INDEX_NAME: string = "📑 AIR: AI-Readable Annotator Index";
 
 async function updateSpecIndex(): Promise<void> {
-  // 기존 인덱스 제거
-  let children: readonly SceneNode[] = figma.currentPage.children;
-  for (let i = children.length - 1; i >= 0; i--) {
-    if (children[i].name === INDEX_NAME) children[i].remove();
+  // hiddenMap 먼저 빌드 (단일 페이지 스캔)
+  const hiddenMap: Map<string, HiddenData> = buildHiddenDataMap();
+
+  // 단일 패스: 인덱스 제거 + 숨김 노드/패널 동시 수집
+  interface PendingHidden {
+    num: string;
+    data: HiddenData;
+    targetNodeId: string;
+  }
+  interface PendingFallback {
+    num: string;
+    fpDesc: string;
+    fpColor: string;
+    fpTarget: string;
   }
 
-  // 모든 스펙 수집
-  const specs: SpecInfo[] = [];
+  const pendingHidden: PendingHidden[] = [];
+  const pendingFallback: PendingFallback[] = [];
   const foundNums: Record<string, boolean> = {};
+  const panelTargetCache: Record<string, string> = {};
 
-  // 1차: 숨김 데이터 노드에서
-  for (let i = 0; i < figma.currentPage.children.length; i++) {
-    const c: SceneNode = figma.currentPage.children[i];
+  const pageChildren: readonly SceneNode[] = figma.currentPage.children;
+  for (let i = pageChildren.length - 1; i >= 0; i--) {
+    const c: SceneNode = pageChildren[i];
+
+    // 기존 인덱스 제거
+    if (c.name === INDEX_NAME) { c.remove(); continue; }
+
+    // 패널 후보 수집 (폴백 + targetNodeId 캐시용)
+    const fpMatch: RegExpMatchArray | null = c.name.match(/^📋 (?:Annotation|Spec): (\d+)/);
+    if (fpMatch) {
+      const fpnum: string = fpMatch[1];
+      let fpDesc: string = "", fpColor: string = "", fpTarget: string = "";
+      try {
+        fpDesc = c.getPluginData("specTags") || "";
+        fpColor = c.getPluginData("markerColor") || "";
+        fpTarget = c.getPluginData("targetNodeId") || "";
+      } catch(e) {}
+      if (fpTarget) {
+        panelTargetCache[fpnum] = fpTarget;
+        pendingFallback.push({ num: fpnum, fpDesc: fpDesc, fpColor: fpColor, fpTarget: fpTarget });
+      }
+      continue;
+    }
+
+    // 숨김 데이터 노드 수집
     if (c.name.indexOf("__specData_") === 0 && c.type === "TEXT") {
       const nm: RegExpMatchArray | null = c.name.match(/__specData_(\d+)__/);
       if (!nm) continue;
       const num: string = nm[1];
-      const data: HiddenData | null = readHiddenData(num);
+      const data: HiddenData | null = hiddenMap.get(num) || null;
       if (!data) continue;
 
-      // 패널에서 targetNodeId 읽기
-      let targetNodeId: string = data.target || "";
-      let targetType: string = "";
-      let targetName: string = "";
-      if (!targetNodeId) {
-        for (let j = 0; j < figma.currentPage.children.length; j++) {
-          const p: SceneNode = figma.currentPage.children[j];
-          if (p.name === "📋 Annotation: " + num || p.name === "📋 Spec: " + num) {
-            try { targetNodeId = p.getPluginData("targetNodeId") || ""; } catch(e) {}
-            break;
-          }
-        }
-      }
-      if (targetNodeId) {
-        try {
-          const tNode: BaseNode | null = await figma.getNodeByIdAsync(targetNodeId);
-          if (tNode) {
-            targetType = tNode.type;
-            targetName = tNode.name;
-          }
-        } catch(e) {}
-      }
-
-      specs.push({
-        num: parseInt(num),
-        title: data.title,
-        desc: data.desc,
-        nodeId: targetNodeId,
-        nodeType: targetType,
-        nodeName: targetName
-      });
+      // targetNodeId: hidden data 우선, 없으면 패널 캐시(패널이 앞에서 이미 처리됐을 수 있음)
+      let targetNodeId: string = data.target || panelTargetCache[num] || "";
+      pendingHidden.push({ num: num, data: data, targetNodeId: targetNodeId });
       foundNums[num] = true;
     }
   }
 
-  // 2차: 패널 pluginData 폴백
-  for (let fi = 0; fi < figma.currentPage.children.length; fi++) {
-    const fc: SceneNode = figma.currentPage.children[fi];
-    const fpMatch: RegExpMatchArray | null = fc.name.match(/^📋 (?:Annotation|Spec): (\d+)/);
-    if (!fpMatch) continue;
-    const fpnum: string = fpMatch[1];
-    if (foundNums[fpnum]) continue;
+  // 숨김 노드에서 targetNodeId가 없는 경우 패널 캐시를 재확인
+  // (역방향 순회로 패널을 먼저 처리했을 수 있으므로 panelTargetCache가 이미 채워진 경우 처리됨)
+  // 단, 정방향 순회에서 패널이 숨김 노드보다 뒤에 있는 경우를 위해 한번 더 보완
+  for (let i = 0; i < pendingHidden.length; i++) {
+    if (!pendingHidden[i].targetNodeId && panelTargetCache[pendingHidden[i].num]) {
+      pendingHidden[i].targetNodeId = panelTargetCache[pendingHidden[i].num];
+    }
+  }
 
-    let fpDesc: string = "", fpColor: string = "", fpTarget: string = "";
-    try {
-      fpDesc = fc.getPluginData("specTags") || "";
-      fpColor = fc.getPluginData("markerColor") || "";
-      fpTarget = fc.getPluginData("targetNodeId") || "";
-    } catch(e) {}
-    if (!fpTarget) continue;
+  // 1차: 숨김 데이터 → targetNodeId 일괄 병렬 resolve
+  const hiddenNodePromises: Array<Promise<BaseNode | null>> = [];
+  for (let i = 0; i < pendingHidden.length; i++) {
+    if (pendingHidden[i].targetNodeId) {
+      hiddenNodePromises.push(figma.getNodeByIdAsync(pendingHidden[i].targetNodeId));
+    } else {
+      hiddenNodePromises.push(Promise.resolve(null));
+    }
+  }
+  const hiddenResolvedNodes: Array<BaseNode | null> = await Promise.all(hiddenNodePromises);
 
-    let fpTitle: string = "", fpType: string = "", fpName: string = "";
-    try {
-      const fpNode: BaseNode | null = await figma.getNodeByIdAsync(fpTarget);
-      if (fpNode) {
-        const fptm: RegExpMatchArray | null = fpNode.name.match(/^\[AIR-\d+\]\s*(.*?)(\s*\|.*)?$/);
-        fpTitle = fptm ? fptm[1] : fpNode.name;
-        fpType = fpNode.type;
-        fpName = fpNode.name;
-      }
-    } catch(e) {}
-
+  const specs: SpecInfo[] = [];
+  for (let i = 0; i < pendingHidden.length; i++) {
+    const ph: PendingHidden = pendingHidden[i];
+    const tNode: BaseNode | null = hiddenResolvedNodes[i];
     specs.push({
-      num: parseInt(fpnum),
+      num: parseInt(ph.num),
+      title: ph.data.title,
+      desc: ph.data.desc,
+      nodeId: ph.targetNodeId,
+      nodeType: tNode ? tNode.type : "",
+      nodeName: tNode ? tNode.name : ""
+    });
+  }
+
+  // 2차: 패널 pluginData 폴백 → 숨김 노드가 없는 것만 일괄 병렬 resolve
+  const filteredFallback: PendingFallback[] = [];
+  for (let i = 0; i < pendingFallback.length; i++) {
+    if (!foundNums[pendingFallback[i].num]) {
+      filteredFallback.push(pendingFallback[i]);
+    }
+  }
+
+  const fallbackNodePromises: Array<Promise<BaseNode | null>> = [];
+  for (let i = 0; i < filteredFallback.length; i++) {
+    fallbackNodePromises.push(figma.getNodeByIdAsync(filteredFallback[i].fpTarget));
+  }
+  const fallbackResolvedNodes: Array<BaseNode | null> = await Promise.all(fallbackNodePromises);
+
+  for (let i = 0; i < filteredFallback.length; i++) {
+    const fb: PendingFallback = filteredFallback[i];
+    const fpNode: BaseNode | null = fallbackResolvedNodes[i];
+    let fpTitle: string = "", fpType: string = "", fpName: string = "";
+    if (fpNode) {
+      const fptm: RegExpMatchArray | null = fpNode.name.match(/^\[AIR-\d+\]\s*(.*?)(\s*\|.*)?$/);
+      fpTitle = fptm ? fptm[1] : fpNode.name;
+      fpType = fpNode.type;
+      fpName = fpNode.name;
+    }
+    specs.push({
+      num: parseInt(fb.num),
       title: fpTitle,
-      desc: fpDesc,
-      nodeId: fpTarget,
+      desc: fb.fpDesc,
+      nodeId: fb.fpTarget,
       nodeType: fpType,
       nodeName: fpName
     });
-    foundNums[fpnum] = true;
+    foundNums[fb.num] = true;
 
     // 숨김 노드 복구
-    try { createHiddenDataNode(fpnum, fpTitle, fpDesc, fpColor, fpTarget); } catch(e) {}
+    try { createHiddenDataNode(fb.num, fpTitle, fb.fpDesc, fb.fpColor, fb.fpTarget); } catch(e) {}
   }
 
   if (specs.length === 0) return;
@@ -936,7 +1013,7 @@ async function writeSpec(nodeId: string, title: string, desc: string, num: strin
       }
     }
 
-    removeExistingArtifacts(currentNum);
+    await removeExistingArtifacts(currentNum);
     if (!desc || !desc.trim()) return { ok: true };
 
     const panel: FrameNode = createSpecPanel(title, desc, currentNum, node as SceneNode, markerColor);
@@ -1018,6 +1095,7 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
     // Collect all spec data first
     const allSpecs: Array<{ num: string; data: HiddenData }> = [];
     const foundNums: Record<string, boolean> = {};
+    const rebuildHiddenMap: Map<string, HiddenData> = buildHiddenDataMap();
     // 1차: 숨김 데이터 노드에서
     for (let ri = 0; ri < children.length; ri++) {
       const rc: SceneNode = children[ri];
@@ -1025,7 +1103,7 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
         const rm: RegExpMatchArray | null = rc.name.match(/__specData_(\d+)__/);
         if (!rm) continue;
         const rnum: string = rm[1];
-        const rdata: HiddenData | null = readHiddenData(rnum);
+        const rdata: HiddenData | null = rebuildHiddenMap.get(rnum) || null;
         if (rdata) { allSpecs.push({ num: rnum, data: rdata }); foundNums[rnum] = true; }
       }
     }
@@ -1114,6 +1192,7 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
     const specs: Array<{ num: string; title: string; color: string; desc: string; targetNodeId: string; preview: string }> = [];
     const foundNums: Record<string, boolean> = {};
     const children: readonly SceneNode[] = figma.currentPage.children;
+    const listHiddenMap: Map<string, HiddenData> = buildHiddenDataMap();
 
     // 1차: 숨김 데이터 노드에서 스캔 (기존 방식)
     for (let i = 0; i < children.length; i++) {
@@ -1122,7 +1201,7 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
         const numMatch: RegExpMatchArray | null = c.name.match(/__specData_(\d+)__/);
         if (!numMatch) continue;
         const num: string = numMatch[1];
-        const data: HiddenData | null = readHiddenData(num);
+        const data: HiddenData | null = listHiddenMap.get(num) || null;
         let targetId: string = (data && data.target) ? data.target : "";
         if (!targetId) {
           for (let j = 0; j < children.length; j++) {
@@ -1207,9 +1286,9 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
     const result: WriteResult = await writeSpec(msg.nodeId, msg.title || "", msg.desc, existingNum, msg.color || "");
     if (result.ok) {
       figma.notify("✅ [AIR-" + existingNum + "] " + (msg.title || "저장 완료"));
-      await updateSpecIndex();
       figma.ui.postMessage({ type: "write-success", nodeId: msg.nodeId });
       readSelectedDesc();
+      updateSpecIndex();
     } else {
       figma.notify("❌ " + result.error, { error: true });
     }
@@ -1219,9 +1298,9 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
     const result: BatchResult = await applyBatch(msg.mappings);
     const notice: string = "✅ " + result.success + "개 저장 완료" + (result.fail > 0 ? " / " + result.fail + "개 실패" : "");
     figma.notify(notice);
-    await updateSpecIndex();
     figma.ui.postMessage({ type: "batch-done", result: result });
     figma.ui.postMessage({ type: "layers-scanned", layers: scanLayers(figma.currentPage, 0) });
+    updateSpecIndex();
   }
 
   if (msg.type === "select-node") {
@@ -1250,17 +1329,17 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
     }
 
     // 패널 + 마커 + 데이터 노드 제거
-    removeExistingArtifacts(num);
+    await removeExistingArtifacts(num);
 
     // 노드 이름에서 [AIR-N] 접두사 제거
     if (node) {
       node.name = stripPrefix(node.name);
     }
 
-    await updateSpecIndex();
     figma.notify("🗑️ [AIR-" + num + "] 어노테이션 삭제 완료");
     figma.ui.postMessage({ type: "delete-done", num: num });
     readSelectedDesc();
+    updateSpecIndex();
   }
 
   if (msg.type === "rebuild-index") {
