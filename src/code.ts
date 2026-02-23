@@ -484,7 +484,10 @@ function createSpecPanel(title: string, desc: string, num: string | number, targ
   footer.primaryAxisSizingMode = "AUTO";
   footer.counterAxisSizingMode = "AUTO";
   footer.counterAxisAlignItems = "CENTER";
-  footer.appendChild(txt("AIR: AI-Readable Annotator · Do not edit directly", 9, th.footer, false));
+  const now: Date = new Date();
+  const pad = function(n: number): string { return n < 10 ? "0" + n : String(n); };
+  const timestamp: string = now.getFullYear() + "-" + pad(now.getMonth() + 1) + "-" + pad(now.getDate()) + " " + pad(now.getHours()) + ":" + pad(now.getMinutes());
+  footer.appendChild(txt("AIR: AI-Readable Annotator · Do not edit directly · " + timestamp, 9, th.footer, false));
   panel.appendChild(footer);
 
   // Position
