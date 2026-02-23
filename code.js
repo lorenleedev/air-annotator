@@ -292,7 +292,7 @@
     body.paddingRight = 18;
     body.layoutAlign = "STRETCH";
     body.primaryAxisSizingMode = "AUTO";
-    body.counterAxisSizingMode = "AUTO";
+    body.counterAxisSizingMode = "FIXED";
     if (parsed.desc.length > 0) {
       const descBlock = alFrame("descBlock", "VERTICAL", 0, 4);
       descBlock.paddingTop = 10;
@@ -336,6 +336,7 @@
       const valColor = isWarn ? th.warnText : th.text;
       const valText = txt(value, 11.5, valColor, false);
       valText.lineHeight = { value: 150, unit: "PERCENT" };
+      valText.resize(10, valText.height);
       valText.textAutoResize = "HEIGHT";
       valText.layoutGrow = 1;
       row.appendChild(valText);
@@ -863,6 +864,54 @@
           }
         }
       }
+      const panelMatch = node.name.match(/^📋 (?:Annotation|Spec): (\d+)/);
+      if (panelMatch) {
+        const pNum = panelMatch[1];
+        let pTitle = "", pDesc = "", pColor = "";
+        let pTargetId = "";
+        let pTargetName = "";
+        let pTargetType = "";
+        const pHidden = readHiddenData(pNum);
+        if (pHidden) {
+          pTitle = pHidden.title;
+          pDesc = pHidden.desc;
+          pColor = pHidden.color;
+          pTargetId = pHidden.target;
+        } else {
+          try {
+            pDesc = node.getPluginData("specTags") || "";
+            pColor = node.getPluginData("markerColor") || "";
+          } catch (e) {
+          }
+        }
+        if (!pTargetId) {
+          try {
+            pTargetId = node.getPluginData("targetNodeId") || "";
+          } catch (e) {
+          }
+        }
+        if (pTargetId) {
+          const pTarget = yield figma.getNodeByIdAsync(pTargetId);
+          if (pTarget) {
+            pTargetName = pTarget.name;
+            pTargetType = pTarget.type;
+          }
+        }
+        figma.ui.postMessage({
+          type: "selection-desc",
+          nodeId: pTargetId || node.id,
+          nodeName: pTargetName || node.name,
+          nodeType: pTargetType || node.type,
+          title: pTitle,
+          desc: pDesc,
+          color: pColor
+        });
+        return;
+      }
+      if (node.name.indexOf("__specData_") === 0 || node.name.indexOf("📑 AIR:") === 0) {
+        figma.ui.postMessage({ type: "selection-empty" });
+        return;
+      }
       let num = "";
       const pm = node.name.match(/^\[AIR-(\d+)\]/);
       if (pm) num = pm[1];
@@ -1211,6 +1260,12 @@
         if (result.ok) {
           figma.notify("✅ [AIR-" + existingNum + "] " + (msg.title || "저장 완료"));
           figma.ui.postMessage({ type: "write-success", nodeId: msg.nodeId });
+          const saveTarget = yield figma.getNodeByIdAsync(msg.nodeId);
+          if (saveTarget) {
+            _readingSelection = true;
+            figma.currentPage.selection = [saveTarget];
+            _readingSelection = false;
+          }
           readSelectedDesc();
           updateSpecIndex();
         } else {

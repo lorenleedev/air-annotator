@@ -384,7 +384,7 @@ function createSpecPanel(title: string, desc: string, num: string | number, targ
   body.paddingLeft = 18; body.paddingRight = 18;
   body.layoutAlign = "STRETCH";
   body.primaryAxisSizingMode = "AUTO";
-  body.counterAxisSizingMode = "AUTO";
+  body.counterAxisSizingMode = "FIXED";
 
   // Description block
   if (parsed.desc.length > 0) {
@@ -432,6 +432,7 @@ function createSpecPanel(title: string, desc: string, num: string | number, targ
     const valColor: RGB = isWarn ? th.warnText : th.text;
     const valText: TextNode = txt(value, 11.5, valColor, false);
     valText.lineHeight = { value: 150, unit: "PERCENT" };
+    valText.resize(10, valText.height);
     valText.textAutoResize = "HEIGHT";
     valText.layoutGrow = 1;
     row.appendChild(valText);
@@ -1041,6 +1042,42 @@ async function readSelectedDesc(): Promise<void> {
     }
   }
 
+  // ── 패널 선택 시 → 주석 데이터 표시 (선택 이동 없이) ──
+  const panelMatch: RegExpMatchArray | null = node.name.match(/^📋 (?:Annotation|Spec): (\d+)/);
+  if (panelMatch) {
+    const pNum: string = panelMatch[1];
+    let pTitle: string = "", pDesc: string = "", pColor: string = "";
+    let pTargetId: string = "";
+    let pTargetName: string = "";
+    let pTargetType: string = "";
+    const pHidden: HiddenData | null = readHiddenData(pNum);
+    if (pHidden) {
+      pTitle = pHidden.title; pDesc = pHidden.desc; pColor = pHidden.color;
+      pTargetId = pHidden.target;
+    } else {
+      try { pDesc = node.getPluginData("specTags") || ""; pColor = node.getPluginData("markerColor") || ""; } catch(e) {}
+    }
+    if (!pTargetId) {
+      try { pTargetId = node.getPluginData("targetNodeId") || ""; } catch(e) {}
+    }
+    if (pTargetId) {
+      const pTarget: BaseNode | null = await figma.getNodeByIdAsync(pTargetId);
+      if (pTarget) { pTargetName = pTarget.name; pTargetType = pTarget.type; }
+    }
+    figma.ui.postMessage({
+      type: "selection-desc",
+      nodeId: pTargetId || node.id, nodeName: pTargetName || node.name, nodeType: pTargetType || node.type,
+      title: pTitle, desc: pDesc, color: pColor
+    });
+    return;
+  }
+
+  // ── 데이터 노드 / 인덱스 프레임 선택 방지 ──
+  if (node.name.indexOf("__specData_") === 0 || node.name.indexOf("📑 AIR:") === 0) {
+    figma.ui.postMessage({ type: "selection-empty" });
+    return;
+  }
+
   // ── 일반 노드 처리 ──
   let num: string = "";
   const pm: RegExpMatchArray | null = node.name.match(/^\[AIR-(\d+)\]/);
@@ -1405,6 +1442,13 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
     if (result.ok) {
       figma.notify("✅ [AIR-" + existingNum + "] " + (msg.title || "저장 완료"));
       figma.ui.postMessage({ type: "write-success", nodeId: msg.nodeId });
+      // 패널 선택 상태에서 저장 시 타겟 노드 선택 복원
+      const saveTarget: BaseNode | null = await figma.getNodeByIdAsync(msg.nodeId);
+      if (saveTarget) {
+        _readingSelection = true;
+        figma.currentPage.selection = [saveTarget as SceneNode];
+        _readingSelection = false;
+      }
       readSelectedDesc();
       updateSpecIndex();
     } else {
