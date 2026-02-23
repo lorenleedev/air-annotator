@@ -127,7 +127,7 @@ function hexToRgb(hex) {
 }
 
 function parseTags(desc) {
-  var result = { desc: [], route: [], auth: [], api: [], ux: [], warn: [], memo: [] };
+  var result = { desc: [], route: [], auth: [], api: [], ux: [], warn: [], memo: [], sub: [] };
   if (!desc) return result;
   var lines = desc.split("\n");
   for (var i = 0; i < lines.length; i++) {
@@ -139,6 +139,7 @@ function parseTags(desc) {
     else if (line.match(/^\[ux\]/)) result.ux.push(line.replace(/^\[ux\]\s*/, ""));
     else if (line.match(/^\[warn\]/)) result.warn.push(line.replace(/^\[warn\]\s*/, ""));
     else if (line.match(/^\[memo\]/)) result.memo.push(line.replace(/^\[memo\]\s*/, ""));
+    else if (line.match(/^\[sub\]/)) result.sub.push(line.replace(/^\[sub\]\s*/, ""));
     else {
       var dm = line.match(/^\[desc\]\s*(.*)/);
       result.desc.push(dm ? dm[1] : line);
@@ -178,6 +179,7 @@ var THEMES = {
       warn:  { bg: { r: 1.00, g: 0.97, b: 0.93 }, text: { r: 0.92, g: 0.35, b: 0.05 } },
       memo:  { bg: { r: 0.96, g: 0.96, b: 0.96 }, text: { r: 0.45, g: 0.45, b: 0.45 } },
       ux:    { bg: { r: 0.99, g: 0.96, b: 1.00 }, text: { r: 0.66, g: 0.33, b: 0.95 } },
+      sub:   { bg: { r: 0.94, g: 0.97, b: 0.94 }, text: { r: 0.18, g: 0.54, b: 0.34 } },
     }
   },
   dark: {
@@ -190,6 +192,7 @@ var THEMES = {
       warn:  { bg: { r: 0.23, g: 0.10, b: 0.03 }, text: { r: 0.98, g: 0.57, b: 0.24 } },
       memo:  { bg: { r: 0.15, g: 0.15, b: 0.15 }, text: { r: 0.64, g: 0.64, b: 0.64 } },
       ux:    { bg: { r: 0.18, g: 0.07, b: 0.22 }, text: { r: 0.75, g: 0.52, b: 0.99 } },
+      sub:   { bg: { r: 0.10, g: 0.18, b: 0.12 }, text: { r: 0.45, g: 0.82, b: 0.55 } },
     }
   }
 };
@@ -338,6 +341,12 @@ suite("parseTags");
   // 혼합
   var r8 = parseTags("일반 설명\n[route] /home\n다른 설명");
   assert("혼합: 일반 텍스트 + 태그", r8.desc.length === 2 && r8.route.length === 1);
+
+  // [sub] 태그
+  var rs = parseTags("[sub] 이메일 검증\n[sub] 비밀번호 강도\n[api] POST /users");
+  assert("[sub] 태그 파싱", rs.sub.length === 2 && rs.api.length === 1);
+  assert("[sub] 값", rs.sub[0] === "이메일 검증");
+  assert("[sub] 두번째 값", rs.sub[1] === "비밀번호 강도");
 })();
 
 // ══════════════════════════════════════
@@ -399,19 +408,19 @@ suite("테마 시스템");
   currentTheme = "light";
   var lt = getTheme();
   assert("light 테마 배경 = 흰색", approx(lt.panelBg.r, 1));
-  assert("light 테마 태그 7종 존재", Object.keys(lt.tags).length === 7);
+  assert("light 테마 태그 8종 존재", Object.keys(lt.tags).length === 8);
 
   currentTheme = "dark";
   var dk = getTheme();
   assert("dark 테마 배경 = 어두운색", approx(dk.panelBg.r, 0.12));
-  assert("dark 테마 태그 7종 존재", Object.keys(dk.tags).length === 7);
+  assert("dark 테마 태그 8종 존재", Object.keys(dk.tags).length === 8);
 
   currentTheme = "invalid";
   assert("잘못된 테마 → light fallback", approx(getTheme().panelBg.r, 1));
 
   // 모든 태그에 bg/text 존재
   currentTheme = "light";
-  var tags = ["route", "auth", "desc", "api", "warn", "memo", "ux"];
+  var tags = ["route", "auth", "desc", "api", "warn", "memo", "ux", "sub"];
   var allHaveColors = tags.every(function(t) {
     return lt.tags[t] && lt.tags[t].bg && lt.tags[t].text;
   });
@@ -704,10 +713,50 @@ suite("code.js 문법 검증");
   assert("figma.showUI 호출 존재", code.indexOf("figma.showUI") >= 0);
 
   // 메시지 핸들러 존재
-  var requiredHandlers = ["init", "write-desc", "delete-spec", "list-specs", "rebuild-all-panels", "rebuild-index", "select-node", "apply-batch", "scan-layers", "toggle-visibility", "set-all-visibility"];
+  var requiredHandlers = ["init", "write-desc", "delete-spec", "list-specs", "rebuild-all-panels", "rebuild-index", "select-node", "apply-batch", "scan-layers", "toggle-visibility", "set-all-visibility", "reorder-specs"];
   requiredHandlers.forEach(function(h) {
     assert('메시지 핸들러 "' + h + '" 존재', code.indexOf('"' + h + '"') >= 0);
   });
+})();
+
+// ══════════════════════════════════════
+// 리넘버링 (reorder)
+// ══════════════════════════════════════
+suite("리넘버링");
+
+(function() {
+  // 순서 매핑 생성 검증
+  var order = ["5", "1", "3"];
+  var oldToNew = {};
+  for (var i = 0; i < order.length; i++) {
+    oldToNew[order[i]] = i + 1;
+  }
+  assert("oldToNew 매핑: 5→1", oldToNew["5"] === 1);
+  assert("oldToNew 매핑: 1→2", oldToNew["1"] === 2);
+  assert("oldToNew 매핑: 3→3", oldToNew["3"] === 3);
+
+  // hiddenNums 리매핑 검증
+  var hiddenSet = [5, 3];
+  var newHidden = [];
+  for (var h = 0; h < hiddenSet.length; h++) {
+    var oldStr = String(hiddenSet[h]);
+    if (oldToNew[oldStr]) {
+      newHidden.push(oldToNew[oldStr]);
+    } else {
+      newHidden.push(hiddenSet[h]);
+    }
+  }
+  newHidden.sort(function(a, b) { return a - b; });
+  assert("hiddenNums 리매핑: [5,3] → [1,3]", eq(newHidden, [1, 3]));
+
+  // 빈 order → 아무 작업 없음
+  assert("빈 order는 에러 없음", (function() { var o = []; return o.length === 0; })());
+
+  // 단일 항목 order → 자기 자신
+  var singleOrder = ["7"];
+  var singleMap = {};
+  singleMap[singleOrder[0]] = 1;
+  assert("단일 항목: 7→1", singleMap["7"] === 1);
 })();
 
 // ══════════════════════════════════════

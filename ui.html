@@ -214,6 +214,16 @@
   .spec-vis svg { width: 14px; height: 14px; }
   .spec-item.hidden { opacity: 0.45; }
   .spec-item.hidden .spec-vis { opacity: 1; }
+  .spec-item.dragging { opacity: 0.4; }
+  .spec-item.drag-over { border-top: 2px solid var(--figma-color-bg-brand); }
+  .spec-drag {
+    width: 16px; height: 24px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--figma-color-text-tertiary); cursor: grab;
+    opacity: 0; transition: opacity 0.15s;
+  }
+  .spec-item:hover .spec-drag { opacity: 1; }
+  .spec-drag:active { cursor: grabbing; }
 
   /* ─── Textarea ─── */
   textarea {
@@ -252,6 +262,7 @@
   .spec-item {
     border-radius: 6px; padding: 7px 8px; margin-bottom: 2px;
     display: flex; gap: 8px; align-items: center; cursor: pointer; transition: background 0.1s;
+    user-select: none;
   }
   .spec-item:hover { background: var(--figma-color-bg-hover); }
   .spec-num {
@@ -263,15 +274,26 @@
   .spec-title-row { display: flex; align-items: center; gap: 6px; }
   .spec-title { font-weight: 500; font-size: 11px; color: var(--figma-color-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .spec-preview { font-size: 10px; color: var(--figma-color-text-tertiary); font-family: 'SF Mono', Consolas, monospace; margin-top: 2px; margin-left: 26px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .spec-arrow { color: var(--figma-color-icon-tertiary); flex-shrink: 0; }
-  .spec-arrow svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.5; }
-  .spec-item:hover .spec-arrow { color: var(--figma-color-icon-secondary); }
   .toast {
     display: none; position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%);
     background: var(--figma-color-bg-secondary); color: var(--figma-color-text);
     padding: 6px 12px; border-radius: 6px; font-size: 10px; font-weight: 500;
     box-shadow: 0 2px 8px rgba(0,0,0,0.2); border: 1px solid var(--figma-color-border);
   }
+  .reorder-overlay {
+    display: none; position: absolute; inset: 0; z-index: 10;
+    background: var(--figma-color-bg); opacity: 0.75;
+    align-items: center; justify-content: center; gap: 8px;
+    color: var(--figma-color-text-tertiary); font-size: 11px;
+    border-radius: 6px;
+  }
+  .reorder-overlay.show { display: flex; }
+  .reorder-spinner {
+    width: 14px; height: 14px; border: 2px solid var(--figma-color-border);
+    border-top-color: var(--figma-color-bg-brand);
+    border-radius: 50%; animation: reorder-spin 0.6s linear infinite;
+  }
+  @keyframes reorder-spin { to { transform: rotate(360deg); } }
 
   /* ─── Help button ─── */
   .help-btn {
@@ -649,7 +671,10 @@
       <button class="list-btn" onclick="refreshList()" data-tip="Refresh list" data-i18n-tip="tip_refresh">↻</button>
     </div>
   </div>
-  <div id="specList"></div>
+  <div style="position:relative;">
+    <div id="specList"></div>
+    <div class="reorder-overlay" id="reorderOverlay"><div class="reorder-spinner"></div><span id="reorderLabel">Reordering...</span></div>
+  </div>
   <div id="specListEmpty" class="empty-state" style="display:none;">
     <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
       <path d="M10 8h8l4 4v12a2 2 0 01-2 2H10a2 2 0 01-2-2V10a2 2 0 012-2z" stroke="var(--figma-color-icon-tertiary)" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
@@ -713,7 +738,8 @@ var I18N = {
       { tag: "[warn] ",  label: "Warn" },
       { tag: "[memo] ",  label: "Memo" },
       { tag: "[ux] ",    label: "UX" },
-      { tag: "[api] ",   label: "API" }
+      { tag: "[api] ",   label: "API" },
+      { tag: "[sub] ",   label: "Sub" }
     ],
     ob_t1: "Select a layer",
     ob_d1: "Click any frame, component, or group on your canvas.",
@@ -736,7 +762,9 @@ var I18N = {
     btn_hide_all: "Hide All",
     btn_show_all: "Show All",
     tip_hide_all: "Hide all annotations on canvas",
-    tip_show_all: "Show all annotations on canvas"
+    tip_show_all: "Show all annotations on canvas",
+    reorder_done: "Annotations reordered",
+    reorder_loading: "Reordering..."
   },
   ko: {
     tab_edit: "편집",
@@ -766,7 +794,8 @@ var I18N = {
       { tag: "[warn] ",  label: "주의" },
       { tag: "[memo] ",  label: "메모" },
       { tag: "[ux] ",    label: "UX" },
-      { tag: "[api] ",   label: "API" }
+      { tag: "[api] ",   label: "API" },
+      { tag: "[sub] ",   label: "하위" }
     ],
     ob_t1: "레이어 선택",
     ob_d1: "캔버스에서 프레임, 컴포넌트, 그룹을 클릭하세요.",
@@ -789,7 +818,9 @@ var I18N = {
     btn_hide_all: "모두 숨기기",
     btn_show_all: "모두 표시",
     tip_hide_all: "캔버스의 모든 어노테이션 숨기기",
-    tip_show_all: "캔버스의 모든 어노테이션 표시"
+    tip_show_all: "캔버스의 모든 어노테이션 표시",
+    reorder_done: "어노테이션 순서 변경됨",
+    reorder_loading: "순서 변경 중..."
   }
 };
 
@@ -1002,12 +1033,23 @@ function exportSpecs(format) {
   setTimeout(function() { toast.style.display = "none"; }, 2000);
 }
 
+function showReorderLoading() {
+  var t = I18N[currentLang];
+  var overlay = document.getElementById("reorderOverlay");
+  document.getElementById("reorderLabel").textContent = t.reorder_loading || "Reordering...";
+  overlay.classList.add("show");
+}
+function hideReorderLoading() {
+  document.getElementById("reorderOverlay").classList.remove("show");
+}
+
 function renderSpecList(specs) {
   cachedSpecs = specs || [];
   var container = document.getElementById("specList"), empty = document.getElementById("specListEmpty");
   container.innerHTML = "";
   if (!specs || specs.length === 0) { empty.style.display = "flex"; updateToggleAllBtn(); return; }
   empty.style.display = "none";
+  var dragSrcNum = null;
   for (var i = 0; i < specs.length; i++) {
     var s = specs[i], item = document.createElement("div");
     item.className = "spec-item" + (s.hidden ? " hidden" : "");
@@ -1015,6 +1057,8 @@ function renderSpecList(specs) {
     var eyeIcon = s.hidden
       ? '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2l12 12"/><path d="M6.5 6.5a2.5 2.5 0 003.5 3.5"/><path d="M4.2 4.2C2.4 5.6 1 8 1 8s2.5 5 7 5c1.4 0 2.6-.5 3.6-1.2"/><path d="M11 4.7C13.3 6 15 8 15 8s-2.5 5-7 5c-.5 0-1-.1-1.5-.2"/></svg>'
       : '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2.5"/></svg>';
+    item.setAttribute("draggable", "true");
+    item.dataset.num = s.num;
     item.innerHTML =
       '<div class="spec-body">' +
         '<div class="spec-title-row">' +
@@ -1023,12 +1067,18 @@ function renderSpecList(specs) {
         '</div>' +
         '<div class="spec-preview">' + (s.preview || '\u2014') + '</div>' +
       '</div>' +
-      '<button class="spec-vis" data-num="' + s.num + '" data-hidden="' + (s.hidden ? '1' : '0') + '" title="' + (s.hidden ? 'Show' : 'Hide') + '">' + eyeIcon + '</button>' +
       '<button class="spec-delete" data-num="' + s.num + '" data-target="' + (s.targetNodeId || '') + '" title="Delete">' +
         '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' +
         '<path d="M3 4h10M6 4V3a1 1 0 011-1h2a1 1 0 011 1v1M5 4v8.5a1 1 0 001 1h4a1 1 0 001-1V4"/></svg>' +
       '</button>' +
-      '<div class="spec-arrow"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>';
+      '<button class="spec-vis" data-num="' + s.num + '" data-hidden="' + (s.hidden ? '1' : '0') + '" title="' + (s.hidden ? 'Show' : 'Hide') + '">' + eyeIcon + '</button>' +
+      '<div class="spec-drag">' +
+        '<svg width="8" height="14" viewBox="0 0 8 14" fill="currentColor">' +
+          '<circle cx="2" cy="2" r="1.2"/><circle cx="6" cy="2" r="1.2"/>' +
+          '<circle cx="2" cy="7" r="1.2"/><circle cx="6" cy="7" r="1.2"/>' +
+          '<circle cx="2" cy="12" r="1.2"/><circle cx="6" cy="12" r="1.2"/>' +
+        '</svg>' +
+      '</div>';
     // Eye toggle click
     item.querySelector(".spec-vis").onclick = (function(num, isHidden) {
       return function(e) {
@@ -1050,6 +1100,47 @@ function renderSpecList(specs) {
         setTimeout(function() { switchTab("sel"); }, 200);
       };
     })(s.targetNodeId);
+    item.ondragstart = (function(num) {
+      return function(e) {
+        dragSrcNum = num;
+        this.classList.add("dragging");
+        e.dataTransfer.effectAllowed = "move";
+      };
+    })(s.num);
+    item.ondragend = function() {
+      this.classList.remove("dragging");
+      container.querySelectorAll(".drag-over").forEach(function(el) {
+        el.classList.remove("drag-over");
+      });
+    };
+    item.ondragover = function(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      // Remove drag-over from all items, add to this one
+      container.querySelectorAll(".drag-over").forEach(function(el) {
+        el.classList.remove("drag-over");
+      });
+      this.classList.add("drag-over");
+    };
+    item.ondragleave = function() {
+      this.classList.remove("drag-over");
+    };
+    item.ondrop = (function(itemNum) {
+      return function(e) {
+        e.preventDefault();
+        this.classList.remove("drag-over");
+        if (dragSrcNum === itemNum) return;
+        var items = container.querySelectorAll(".spec-item");
+        var order = [];
+        for (var j = 0; j < items.length; j++) order.push(items[j].dataset.num);
+        var fromIdx = order.indexOf(dragSrcNum);
+        order.splice(fromIdx, 1);
+        var toIdx = order.indexOf(itemNum);
+        order.splice(toIdx, 0, dragSrcNum);
+        showReorderLoading();
+        parent.postMessage({ pluginMessage: { type: "reorder-specs", order: order } }, "*");
+      };
+    })(s.num);
     container.appendChild(item);
   }
   updateToggleAllBtn();
@@ -1236,6 +1327,10 @@ window.onmessage = function(e) {
     refreshList();
   }
   if (msg.type === "all-visibility-changed") {
+    refreshList();
+  }
+  if (msg.type === "reorder-done") {
+    hideReorderLoading();
     refreshList();
   }
   if (msg.type === "page-changed") {

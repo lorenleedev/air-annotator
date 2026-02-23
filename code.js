@@ -84,7 +84,8 @@
         api: { bg: { r: 0.94, g: 0.96, b: 1 }, text: { r: 0.15, g: 0.39, b: 0.92 } },
         warn: { bg: { r: 1, g: 0.97, b: 0.93 }, text: { r: 0.92, g: 0.35, b: 0.05 } },
         memo: { bg: { r: 0.96, g: 0.96, b: 0.96 }, text: { r: 0.45, g: 0.45, b: 0.45 } },
-        ux: { bg: { r: 0.99, g: 0.96, b: 1 }, text: { r: 0.66, g: 0.33, b: 0.95 } }
+        ux: { bg: { r: 0.99, g: 0.96, b: 1 }, text: { r: 0.66, g: 0.33, b: 0.95 } },
+        sub: { bg: { r: 0.94, g: 0.97, b: 0.94 }, text: { r: 0.18, g: 0.54, b: 0.34 } }
       }
     },
     dark: {
@@ -106,7 +107,8 @@
         api: { bg: { r: 0.09, g: 0.15, b: 0.33 }, text: { r: 0.38, g: 0.65, b: 0.98 } },
         warn: { bg: { r: 0.23, g: 0.1, b: 0.03 }, text: { r: 0.98, g: 0.57, b: 0.24 } },
         memo: { bg: { r: 0.15, g: 0.15, b: 0.15 }, text: { r: 0.64, g: 0.64, b: 0.64 } },
-        ux: { bg: { r: 0.18, g: 0.07, b: 0.22 }, text: { r: 0.75, g: 0.52, b: 0.99 } }
+        ux: { bg: { r: 0.18, g: 0.07, b: 0.22 }, text: { r: 0.75, g: 0.52, b: 0.99 } },
+        sub: { bg: { r: 0.1, g: 0.18, b: 0.12 }, text: { r: 0.45, g: 0.82, b: 0.55 } }
       }
     }
   };
@@ -183,7 +185,7 @@
     };
   }
   function parseTags(desc) {
-    const result = { desc: [], route: [], auth: [], api: [], ux: [], warn: [], memo: [] };
+    const result = { desc: [], route: [], auth: [], api: [], ux: [], warn: [], memo: [], sub: [] };
     if (!desc) return result;
     const lines = desc.split("\n");
     for (let i = 0; i < lines.length; i++) {
@@ -195,6 +197,7 @@
       else if (line.match(/^\[ux\]/)) result.ux.push(line.replace(/^\[ux\]\s*/, ""));
       else if (line.match(/^\[warn\]/)) result.warn.push(line.replace(/^\[warn\]\s*/, ""));
       else if (line.match(/^\[memo\]/)) result.memo.push(line.replace(/^\[memo\]\s*/, ""));
+      else if (line.match(/^\[sub\]/)) result.sub.push(line.replace(/^\[sub\]\s*/, ""));
       else {
         const dm = line.match(/^\[desc\]\s*(.*)/);
         result.desc.push(dm ? dm[1] : line);
@@ -352,6 +355,11 @@
         tagRow(propOrder[pi].key, propOrder[pi].items[pj], false);
         hasProps = true;
       }
+    }
+    for (let si = 0; si < parsed.sub.length; si++) {
+      const letter = String.fromCharCode(97 + si);
+      tagRow("sub", letter + ") " + parsed.sub[si], false);
+      hasProps = true;
     }
     let hasWarn = false;
     for (let wi = 0; wi < warnOrder.length; wi++) {
@@ -716,9 +724,17 @@
         lines.push(header);
         if (sp.desc) {
           const descLines = sp.desc.split("\n");
+          let subIdx = 0;
           for (let d = 0; d < descLines.length; d++) {
             const dl = descLines[d].trim();
-            if (dl) lines.push("  " + dl);
+            if (!dl) continue;
+            if (dl.match(/^\[sub\]/)) {
+              const subVal = dl.replace(/^\[sub\]\s*/, "");
+              lines.push("  " + sp.num + "-" + String.fromCharCode(97 + subIdx) + ") " + subVal);
+              subIdx++;
+            } else {
+              lines.push("  " + dl);
+            }
           }
         }
         lines.push("");
@@ -1331,6 +1347,126 @@
         figma.notify("👁️ " + allNums.length + " annotation(s) " + label);
         figma.ui.postMessage({ type: "all-visibility-changed", visible: msg.visible });
         updateSpecIndex();
+      }
+      if (msg.type === "reorder-specs") {
+        const order = msg.order;
+        if (!order || order.length === 0) return;
+        const oldToNew = {};
+        for (let oi = 0; oi < order.length; oi++) {
+          oldToNew[order[oi]] = oi + 1;
+        }
+        const reorderHiddenMap = buildHiddenDataMap();
+        const reorderHiddenNums = getHiddenNums();
+        const entries = [];
+        const children = figma.currentPage.children;
+        for (let oi = 0; oi < order.length; oi++) {
+          const oldNum = order[oi];
+          const newNum = oldToNew[oldNum];
+          let data = reorderHiddenMap.get(oldNum) || null;
+          if (!data) {
+            for (let ci = 0; ci < children.length; ci++) {
+              const cn = children[ci].name;
+              if (cn === "📋 Annotation: " + oldNum || cn === "📋 Spec: " + oldNum) {
+                try {
+                  const pd = children[ci].getPluginData("specTags") || "";
+                  const pc = children[ci].getPluginData("markerColor") || "";
+                  const pt = children[ci].getPluginData("targetNodeId") || "";
+                  let pTitle = "";
+                  if (pt) {
+                    const tn = yield figma.getNodeByIdAsync(pt);
+                    if (tn) {
+                      const tm = tn.name.match(/^\[AIR-\d+\]\s*(.*?)(\s*\|.*)?$/);
+                      pTitle = tm ? tm[1] : tn.name;
+                    }
+                  }
+                  data = { title: pTitle, desc: pd, color: pc, target: pt };
+                } catch (e) {
+                }
+                break;
+              }
+            }
+          }
+          if (!data || !data.target) continue;
+          let panelPos = null;
+          for (let ci = 0; ci < children.length; ci++) {
+            const cn = children[ci].name;
+            if (cn === "📋 Annotation: " + oldNum || cn === "📋 Spec: " + oldNum) {
+              panelPos = { x: children[ci].x, y: children[ci].y };
+              break;
+            }
+          }
+          entries.push({
+            oldNum,
+            newNum,
+            data,
+            panelPos,
+            wasHidden: reorderHiddenNums.has(parseInt(oldNum))
+          });
+        }
+        for (let ei = 0; ei < entries.length; ei++) {
+          yield removeExistingArtifacts(entries[ei].oldNum);
+          if (entries[ei].data.target) {
+            const tNode = yield figma.getNodeByIdAsync(entries[ei].data.target);
+            if (tNode) {
+              tNode.name = stripPrefix(tNode.name);
+            }
+          }
+        }
+        for (let ei = 0; ei < entries.length; ei++) {
+          const entry = entries[ei];
+          const tNode = yield figma.getNodeByIdAsync(entry.data.target);
+          if (!tNode) continue;
+          const newNumStr = String(entry.newNum);
+          const mColor = entry.data.color ? hexToRgb(entry.data.color) : CLR.headerBg;
+          const summary = makeSummary(entry.data.desc);
+          const displayTitle = entry.data.title || stripPrefix(tNode.name);
+          tNode.name = "[AIR-" + newNumStr + "] " + displayTitle + summary;
+          const panel = createSpecPanel(entry.data.title, entry.data.desc, newNumStr, tNode, mColor);
+          figma.currentPage.appendChild(panel);
+          if (entry.panelPos) {
+            panel.x = entry.panelPos.x;
+            panel.y = entry.panelPos.y;
+          }
+          panel.setPluginData("specTags", entry.data.desc);
+          panel.setPluginData("targetNodeId", entry.data.target);
+          panel.setPluginData("markerColor", entry.data.color || "");
+          panel.setRelaunchData({ edit: "" });
+          for (let ci = 0; ci < panel.children.length; ci++) {
+            panel.children[ci].locked = true;
+          }
+          createMarkerBadge(newNumStr, tNode, mColor);
+          createHiddenDataNode(newNumStr, entry.data.title, entry.data.desc, entry.data.color, entry.data.target);
+          tNode.setRelaunchData({ edit: "" });
+          if (entry.wasHidden) {
+            yield setAnnotationVisibility(entry.newNum, false);
+          }
+        }
+        const newHiddenNums = /* @__PURE__ */ new Set();
+        reorderHiddenNums.forEach(function(n) {
+          const oldStr = String(n);
+          if (oldToNew[oldStr]) {
+            newHiddenNums.add(oldToNew[oldStr]);
+          } else {
+            newHiddenNums.add(n);
+          }
+        });
+        setHiddenNums(newHiddenNums);
+        let maxNewNum = 0;
+        for (let ei = 0; ei < entries.length; ei++) {
+          if (entries[ei].newNum > maxNewNum) maxNewNum = entries[ei].newNum;
+        }
+        const afterChildren = figma.currentPage.children;
+        for (let ai = 0; ai < afterChildren.length; ai++) {
+          const am = afterChildren[ai].name.match(/^\[AIR-(\d+)\]/) || afterChildren[ai].name.match(/^📋 (?:Annotation|Spec): (\d+)/);
+          if (am) {
+            const an = parseInt(am[1]);
+            if (an > maxNewNum) maxNewNum = an;
+          }
+        }
+        figma.currentPage.setPluginData("airMaxNum", String(maxNewNum));
+        yield updateSpecIndex();
+        figma.notify("🔢 " + entries.length + "개 어노테이션 순서 변경");
+        figma.ui.postMessage({ type: "reorder-done" });
       }
       if (msg.type === "cancel") {
         figma.closePlugin();

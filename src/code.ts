@@ -34,6 +34,7 @@ interface ParsedTags {
   ux: string[];
   warn: string[];
   memo: string[];
+  sub: string[];
 }
 
 interface HiddenData {
@@ -90,6 +91,7 @@ type UIMessage =
   | { type: "rebuild-index" }
   | { type: "toggle-visibility"; num: string; visible: boolean }
   | { type: "set-all-visibility"; visible: boolean }
+  | { type: "reorder-specs"; order: string[] }
   | { type: "cancel" };
 
 // ── Relaunch: 패널/마커/대상 노드에서 플러그인 열기 ──
@@ -164,6 +166,7 @@ const THEMES: Record<string, ThemeColors> = {
       warn:  { bg: { r: 1.00, g: 0.97, b: 0.93 }, text: { r: 0.92, g: 0.35, b: 0.05 } },
       memo:  { bg: { r: 0.96, g: 0.96, b: 0.96 }, text: { r: 0.45, g: 0.45, b: 0.45 } },
       ux:    { bg: { r: 0.99, g: 0.96, b: 1.00 }, text: { r: 0.66, g: 0.33, b: 0.95 } },
+      sub:   { bg: { r: 0.94, g: 0.97, b: 0.94 }, text: { r: 0.18, g: 0.54, b: 0.34 } },
     }
   },
   dark: {
@@ -186,6 +189,7 @@ const THEMES: Record<string, ThemeColors> = {
       warn:  { bg: { r: 0.23, g: 0.10, b: 0.03 }, text: { r: 0.98, g: 0.57, b: 0.24 } },
       memo:  { bg: { r: 0.15, g: 0.15, b: 0.15 }, text: { r: 0.64, g: 0.64, b: 0.64 } },
       ux:    { bg: { r: 0.18, g: 0.07, b: 0.22 }, text: { r: 0.75, g: 0.52, b: 0.99 } },
+      sub:   { bg: { r: 0.10, g: 0.18, b: 0.12 }, text: { r: 0.45, g: 0.82, b: 0.55 } },
     }
   }
 };
@@ -269,7 +273,7 @@ function hexToRgb(hex: string): RGB {
 
 // 태그 파싱
 function parseTags(desc: string): ParsedTags {
-  const result: ParsedTags = { desc: [], route: [], auth: [], api: [], ux: [], warn: [], memo: [] };
+  const result: ParsedTags = { desc: [], route: [], auth: [], api: [], ux: [], warn: [], memo: [], sub: [] };
   if (!desc) return result;
   const lines: string[] = desc.split("\n");
   for (let i = 0; i < lines.length; i++) {
@@ -281,6 +285,7 @@ function parseTags(desc: string): ParsedTags {
     else if (line.match(/^\[ux\]/)) result.ux.push(line.replace(/^\[ux\]\s*/, ""));
     else if (line.match(/^\[warn\]/)) result.warn.push(line.replace(/^\[warn\]\s*/, ""));
     else if (line.match(/^\[memo\]/)) result.memo.push(line.replace(/^\[memo\]\s*/, ""));
+    else if (line.match(/^\[sub\]/)) result.sub.push(line.replace(/^\[sub\]\s*/, ""));
     else {
       const dm: RegExpMatchArray | null = line.match(/^\[desc\]\s*(.*)/);
       result.desc.push(dm ? dm[1] : line);
@@ -449,6 +454,13 @@ function createSpecPanel(title: string, desc: string, num: string | number, targ
       tagRow(propOrder[pi].key, propOrder[pi].items[pj], false);
       hasProps = true;
     }
+  }
+
+  // Sub items with auto-lettering
+  for (let si = 0; si < parsed.sub.length; si++) {
+    const letter: string = String.fromCharCode(97 + si);
+    tagRow("sub", letter + ") " + parsed.sub[si], false);
+    hasProps = true;
   }
 
   let hasWarn: boolean = false;
@@ -862,9 +874,17 @@ async function updateSpecIndex(): Promise<void> {
 
     if (sp.desc) {
       const descLines: string[] = sp.desc.split("\n");
+      let subIdx: number = 0;
       for (let d = 0; d < descLines.length; d++) {
         const dl: string = descLines[d].trim();
-        if (dl) lines.push("  " + dl);
+        if (!dl) continue;
+        if (dl.match(/^\[sub\]/)) {
+          const subVal: string = dl.replace(/^\[sub\]\s*/, "");
+          lines.push("  " + sp.num + "-" + String.fromCharCode(97 + subIdx) + ") " + subVal);
+          subIdx++;
+        } else {
+          lines.push("  " + dl);
+        }
       }
     }
     lines.push("");
@@ -1534,6 +1554,171 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
     figma.notify("👁️ " + allNums.length + " annotation(s) " + label);
     figma.ui.postMessage({ type: "all-visibility-changed", visible: msg.visible });
     updateSpecIndex();
+  }
+
+  if (msg.type === "reorder-specs") {
+    const order: string[] = msg.order;
+    if (!order || order.length === 0) return;
+
+    // Build oldToNew mapping: order[0] becomes 1, order[1] becomes 2, etc.
+    const oldToNew: Record<string, number> = {};
+    for (let oi = 0; oi < order.length; oi++) {
+      oldToNew[order[oi]] = oi + 1;
+    }
+
+    // Collect phase
+    const reorderHiddenMap: Map<string, HiddenData> = buildHiddenDataMap();
+    const reorderHiddenNums: Set<number> = getHiddenNums();
+
+    interface ReorderEntry {
+      oldNum: string;
+      newNum: number;
+      data: HiddenData;
+      panelPos: { x: number; y: number } | null;
+      wasHidden: boolean;
+    }
+
+    const entries: ReorderEntry[] = [];
+    const children: readonly SceneNode[] = figma.currentPage.children;
+
+    for (let oi = 0; oi < order.length; oi++) {
+      const oldNum: string = order[oi];
+      const newNum: number = oldToNew[oldNum];
+      let data: HiddenData | null = reorderHiddenMap.get(oldNum) || null;
+
+      // Fallback to panel pluginData
+      if (!data) {
+        for (let ci = 0; ci < children.length; ci++) {
+          const cn: string = children[ci].name;
+          if (cn === "📋 Annotation: " + oldNum || cn === "📋 Spec: " + oldNum) {
+            try {
+              const pd: string = children[ci].getPluginData("specTags") || "";
+              const pc: string = children[ci].getPluginData("markerColor") || "";
+              const pt: string = children[ci].getPluginData("targetNodeId") || "";
+              let pTitle: string = "";
+              if (pt) {
+                const tn: BaseNode | null = await figma.getNodeByIdAsync(pt);
+                if (tn) {
+                  const tm: RegExpMatchArray | null = tn.name.match(/^\[AIR-\d+\]\s*(.*?)(\s*\|.*)?$/);
+                  pTitle = tm ? tm[1] : tn.name;
+                }
+              }
+              data = { title: pTitle, desc: pd, color: pc, target: pt };
+            } catch(e) {}
+            break;
+          }
+        }
+      }
+
+      if (!data || !data.target) continue;
+
+      // Save panel position
+      let panelPos: { x: number; y: number } | null = null;
+      for (let ci = 0; ci < children.length; ci++) {
+        const cn: string = children[ci].name;
+        if (cn === "📋 Annotation: " + oldNum || cn === "📋 Spec: " + oldNum) {
+          panelPos = { x: children[ci].x, y: children[ci].y };
+          break;
+        }
+      }
+
+      entries.push({
+        oldNum: oldNum,
+        newNum: newNum,
+        data: data,
+        panelPos: panelPos,
+        wasHidden: reorderHiddenNums.has(parseInt(oldNum))
+      });
+    }
+
+    // Delete phase - remove all artifacts for old numbers
+    for (let ei = 0; ei < entries.length; ei++) {
+      await removeExistingArtifacts(entries[ei].oldNum);
+      // Strip prefix from target node
+      if (entries[ei].data.target) {
+        const tNode: BaseNode | null = await figma.getNodeByIdAsync(entries[ei].data.target);
+        if (tNode) {
+          tNode.name = stripPrefix(tNode.name);
+        }
+      }
+    }
+
+    // Recreate phase - create with new numbers
+    for (let ei = 0; ei < entries.length; ei++) {
+      const entry: ReorderEntry = entries[ei];
+      const tNode: BaseNode | null = await figma.getNodeByIdAsync(entry.data.target);
+      if (!tNode) continue;
+
+      const newNumStr: string = String(entry.newNum);
+      const mColor: RGB = entry.data.color ? hexToRgb(entry.data.color) : CLR.headerBg;
+      const summary: string = makeSummary(entry.data.desc);
+      const displayTitle: string = entry.data.title || stripPrefix(tNode.name);
+
+      // Update layer name
+      tNode.name = "[AIR-" + newNumStr + "] " + displayTitle + summary;
+
+      // Create panel
+      const panel: FrameNode = createSpecPanel(entry.data.title, entry.data.desc, newNumStr, tNode as SceneNode, mColor);
+      figma.currentPage.appendChild(panel);
+      if (entry.panelPos) {
+        panel.x = entry.panelPos.x;
+        panel.y = entry.panelPos.y;
+      }
+      panel.setPluginData("specTags", entry.data.desc);
+      panel.setPluginData("targetNodeId", entry.data.target);
+      panel.setPluginData("markerColor", entry.data.color || "");
+      panel.setRelaunchData({ edit: '' });
+      for (let ci = 0; ci < panel.children.length; ci++) {
+        panel.children[ci].locked = true;
+      }
+
+      // Create marker
+      createMarkerBadge(newNumStr, tNode as SceneNode, mColor);
+
+      // Create hidden data node
+      createHiddenDataNode(newNumStr, entry.data.title, entry.data.desc, entry.data.color, entry.data.target);
+
+      // Relaunch data on target
+      (tNode as SceneNode).setRelaunchData({ edit: '' });
+
+      // Restore hidden state
+      if (entry.wasHidden) {
+        await setAnnotationVisibility(entry.newNum, false);
+      }
+    }
+
+    // Remap hidden nums
+    const newHiddenNums: Set<number> = new Set();
+    reorderHiddenNums.forEach(function(n: number) {
+      const oldStr: string = String(n);
+      if (oldToNew[oldStr]) {
+        newHiddenNums.add(oldToNew[oldStr]);
+      } else {
+        newHiddenNums.add(n);
+      }
+    });
+    setHiddenNums(newHiddenNums);
+
+    // Update airMaxNum cache
+    let maxNewNum: number = 0;
+    for (let ei = 0; ei < entries.length; ei++) {
+      if (entries[ei].newNum > maxNewNum) maxNewNum = entries[ei].newNum;
+    }
+    // Also check existing non-reordered annotations
+    const afterChildren: readonly SceneNode[] = figma.currentPage.children;
+    for (let ai = 0; ai < afterChildren.length; ai++) {
+      const am: RegExpMatchArray | null = afterChildren[ai].name.match(/^\[AIR-(\d+)\]/) ||
+              afterChildren[ai].name.match(/^📋 (?:Annotation|Spec): (\d+)/);
+      if (am) {
+        const an: number = parseInt(am[1]);
+        if (an > maxNewNum) maxNewNum = an;
+      }
+    }
+    figma.currentPage.setPluginData("airMaxNum", String(maxNewNum));
+
+    await updateSpecIndex();
+    figma.notify("🔢 " + entries.length + "개 어노테이션 순서 변경");
+    figma.ui.postMessage({ type: "reorder-done" });
   }
 
   if (msg.type === "cancel") { figma.closePlugin(); }
