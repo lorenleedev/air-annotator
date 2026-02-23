@@ -269,12 +269,14 @@
     titleCol.counterAxisSizingMode = "AUTO";
     const headerLabel = title || "Annotation";
     titleCol.appendChild(txt(headerLabel, 13, th.title, true));
-    let nodeType = "";
-    try {
-      nodeType = targetNode.type || "";
-    } catch (e) {
-    }
-    titleCol.appendChild(txt(nodeType, 10, th.subtitle, false));
+    const now = /* @__PURE__ */ new Date();
+    const pad = function(n) {
+      return n < 10 ? "0" + n : String(n);
+    };
+    const updatedAt = now.getFullYear() + "-" + pad(now.getMonth() + 1) + "-" + pad(now.getDate()) + " " + pad(now.getHours()) + ":" + pad(now.getMinutes()) + ":" + pad(now.getSeconds());
+    const userName = figma.currentUser ? figma.currentUser.name : "";
+    const subtitleText = userName ? updatedAt + " · " + userName : updatedAt;
+    titleCol.appendChild(txt(subtitleText, 10, th.subtitle, false));
     header.appendChild(titleCol);
     panel.appendChild(header);
     const hBorder = figma.createFrame();
@@ -390,12 +392,7 @@
     footer.primaryAxisSizingMode = "AUTO";
     footer.counterAxisSizingMode = "AUTO";
     footer.counterAxisAlignItems = "CENTER";
-    const now = /* @__PURE__ */ new Date();
-    const pad = function(n) {
-      return n < 10 ? "0" + n : String(n);
-    };
-    const timestamp = now.getFullYear() + "-" + pad(now.getMonth() + 1) + "-" + pad(now.getDate()) + " " + pad(now.getHours()) + ":" + pad(now.getMinutes());
-    footer.appendChild(txt("AIR: AI-Readable Annotator · Do not edit directly · " + timestamp, 9, th.footer, false));
+    footer.appendChild(txt("AIR: AI-Readable Annotator · Do not edit directly · " + updatedAt, 9, th.footer, false));
     panel.appendChild(footer);
     panel.x = targetNode.absoluteTransform[0][2] + targetNode.width + PANEL_GAP;
     panel.y = targetNode.absoluteTransform[1][2];
