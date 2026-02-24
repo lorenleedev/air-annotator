@@ -363,7 +363,12 @@
       }
     }
     for (let si = 0; si < parsed.sub.length; si++) {
-      const letter = String.fromCharCode(97 + si);
+      let letter;
+      if (si < 26) {
+        letter = String.fromCharCode(97 + si);
+      } else {
+        letter = String.fromCharCode(97 + Math.floor((si - 26) / 26)) + String.fromCharCode(97 + si % 26);
+      }
       tagRow("sub", letter + ") " + parsed.sub[si], false);
       hasProps = true;
     }
@@ -406,23 +411,24 @@
     return name.replace(/^\[AIR-\d+\]\s*/, "").replace(/\s*\|.*$/, "");
   }
   function getNextNum() {
-    const cached = figma.currentPage.getPluginData("airMaxNum") || "";
-    if (cached && parseInt(cached) > 0) {
-      const next = parseInt(cached) + 1;
-      figma.currentPage.setPluginData("airMaxNum", String(next));
-      return next;
-    }
     let max = 0;
     const children = figma.currentPage.children;
     for (let i = 0; i < children.length; i++) {
-      const m = children[i].name.match(/^\[AIR-(\d+)\]/) || children[i].name.match(/^📋 Annotation: (\d+)/) || children[i].name.match(/^📋 Spec: (\d+)/);
+      const c = children[i];
+      const m = c.name.match(/^\[AIR-(\d+)\]/) || c.name.match(/^📋 Annotation: (\d+)/) || c.name.match(/^📋 Spec: (\d+)/) || c.name.match(/^__specData_(\d+)__/) || c.name.match(/^🏷️ (\d+)/);
       if (m) {
         const n = parseInt(m[1]);
         if (n > max) max = n;
       }
     }
-    figma.currentPage.setPluginData("airMaxNum", String(max + 1));
-    return max + 1;
+    const cached = figma.currentPage.getPluginData("airMaxNum") || "";
+    if (cached) {
+      const cachedNum = parseInt(cached);
+      if (cachedNum > max) max = cachedNum;
+    }
+    const next = max + 1;
+    figma.currentPage.setPluginData("airMaxNum", String(next));
+    return next;
   }
   function removeExistingArtifacts(num) {
     return __async(this, null, function* () {
@@ -432,16 +438,28 @@
       const dataName = "__specData_" + num + "__";
       let targetNodeId = "";
       const children = figma.currentPage.children;
-      for (let i = children.length - 1; i >= 0; i--) {
+      for (let i = 0; i < children.length; i++) {
         const c = children[i];
         const n = c.name;
-        if (n === panelName || n === oldPanelName) {
+        if (!targetNodeId && (n === panelName || n === oldPanelName)) {
           try {
             targetNodeId = c.getPluginData("targetNodeId") || "";
           } catch (e) {
           }
-          c.remove();
-        } else if (n === markerName || n === dataName) {
+        }
+        if (!targetNodeId && n === dataName && c.type === "TEXT") {
+          try {
+            const raw = c.characters || "";
+            const tm = raw.match(/target:[ ]*(.*)/);
+            if (tm && tm[1].trim()) targetNodeId = tm[1].trim();
+          } catch (e) {
+          }
+        }
+      }
+      for (let i = children.length - 1; i >= 0; i--) {
+        const c = children[i];
+        const n = c.name;
+        if (n === panelName || n === oldPanelName || n === markerName || n === dataName) {
           c.remove();
         }
       }
@@ -731,7 +749,13 @@
             if (!dl) continue;
             if (dl.match(/^\[sub\]/)) {
               const subVal = dl.replace(/^\[sub\]\s*/, "");
-              lines.push("  " + sp.num + "-" + String.fromCharCode(97 + subIdx) + ") " + subVal);
+              let subLetter;
+              if (subIdx < 26) {
+                subLetter = String.fromCharCode(97 + subIdx);
+              } else {
+                subLetter = String.fromCharCode(97 + Math.floor((subIdx - 26) / 26)) + String.fromCharCode(97 + subIdx % 26);
+              }
+              lines.push("  " + sp.num + "-" + subLetter + ") " + subVal);
               subIdx++;
             } else {
               lines.push("  " + dl);
@@ -863,9 +887,12 @@
           if (seq !== _readSelectionSeq) return;
           if (targetNode) {
             _readingSelection = true;
-            figma.currentPage.selection = [targetNode];
-            figma.viewport.scrollAndZoomIntoView([targetNode]);
-            _readingSelection = false;
+            try {
+              figma.currentPage.selection = [targetNode];
+              figma.viewport.scrollAndZoomIntoView([targetNode]);
+            } finally {
+              _readingSelection = false;
+            }
             return;
           }
         }
@@ -963,14 +990,15 @@
       const markerColor = colorHex ? hexToRgb(colorHex) : CLR.headerBg;
       try {
         let currentNum = num;
+        if (!currentNum) {
+          const em = node.name.match(/^\[AIR-(\d+)\]/);
+          if (em) currentNum = em[1];
+        }
         if (currentNum) {
           const cleanName = stripPrefix(node.name);
           const summary = makeSummary(desc);
           const displayTitle = title || cleanName;
           node.name = "[AIR-" + currentNum + "] " + displayTitle + summary;
-        } else {
-          const em = node.name.match(/^\[AIR-(\d+)\]/);
-          if (em) currentNum = em[1];
         }
         if (!currentNum) return { ok: false, error: "번호가 없습니다." };
         let existingPos = null;
@@ -987,7 +1015,10 @@
           }
         }
         yield removeExistingArtifacts(currentNum);
-        if (!desc || !desc.trim()) return { ok: true };
+        if (!desc || !desc.trim()) {
+          node.name = stripPrefix(node.name);
+          return { ok: true };
+        }
         const panel = createSpecPanel(title, desc, currentNum, node, markerColor);
         figma.currentPage.appendChild(panel);
         if (existingPos) {
@@ -1020,6 +1051,8 @@
       let success = 0, fail = 0;
       const errors = [];
       const nextNum = getNextNum();
+      const maxBatchNum = nextNum + mappings.length - 1;
+      figma.currentPage.setPluginData("airMaxNum", String(maxBatchNum));
       for (let i = 0; i < mappings.length; i++) {
         const m = mappings[i];
         const num = nextNum + i;
@@ -1029,9 +1062,6 @@
           fail++;
           errors.push(result.error);
         }
-      }
-      if (mappings.length > 1) {
-        figma.currentPage.setPluginData("airMaxNum", String(nextNum + mappings.length - 1));
       }
       return { success, fail, errors };
     });
@@ -1383,6 +1413,14 @@
             if (!seen[dnum]) {
               allNums.push(dnum);
               seen[dnum] = true;
+            }
+            if (c.type === "TEXT") {
+              try {
+                const raw = c.characters || "";
+                const tm = raw.match(/target:[ ]*(.*)/);
+                if (tm && tm[1].trim()) targetNodeIds.push(tm[1].trim());
+              } catch (e) {
+              }
             }
           }
         }

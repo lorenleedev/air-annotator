@@ -121,7 +121,7 @@
   /* ─── Hero Banner ─── */
   .hero-banner {
     position: relative; overflow: hidden;
-    padding: 14px 16px 10px 14px; 
+    padding: 14px 16px 10px 14px;
     background: #111113;
     background-image:
       linear-gradient(rgba(255,255,255,.04) 1px, transparent 1px),
@@ -138,7 +138,7 @@
   .hero-block.b5 { background: #0ACF83; }
   .hero-content { position: relative; z-index: 1; }
   .hero-top-row {
-    position: relative; z-index: 1; 
+    position: relative; z-index: 1;
     display: flex; align-items: center; justify-content: flex-end;
     margin-bottom: 0;
   }
@@ -295,18 +295,6 @@
   }
   @keyframes reorder-spin { to { transform: rotate(360deg); } }
 
-  /* ─── Help button ─── */
-  .help-btn {
-    width: 24px; height: 24px; flex-shrink: 0;
-    display: flex; align-items: center; justify-content: center;
-    border: 1px solid var(--figma-color-border);
-    border-radius: 6px; background: none; cursor: pointer;
-    font-size: 11px; font-weight: 600; line-height: 1;
-    color: var(--figma-color-text-secondary);
-    transition: all 0.15s;
-  }
-  .help-btn:hover { background: var(--figma-color-bg-hover); color: var(--figma-color-text); border-color: var(--figma-color-border-strong); }
-
   /* ─── Onboarding overlay ─── */
   .ob-overlay {
     display: none; position: fixed; inset: 0; z-index: 200;
@@ -454,7 +442,7 @@
     </div>
     <div class="ob-step-badge">1</div>
     <div class="ob-title" data-i18n="ob_t1">Select a layer</div>
-    <div class="ob-desc" data-i18n="ob_d1">Click any frame, component, or group on your canvas. The plugin will show its info.</div>
+    <div class="ob-desc" data-i18n="ob_d1">Click any frame, component, or group on your canvas.</div>
   </div>
 
   <!-- Slide 2: Annotate -->
@@ -873,6 +861,7 @@ function updateThemeBtn() {
   var label = document.getElementById("themeLabel");
   var icon = document.getElementById("themeIcon");
   var btn = document.getElementById("themeBtn");
+  if (!label || !icon || !btn) return;
   if (panelTheme === "dark") {
     label.textContent = "Dark";
     btn.title = "Panel theme: Dark";
@@ -886,6 +875,7 @@ function updateThemeBtn() {
 
 function renderChips() {
   var row = document.getElementById("chipRow");
+  if (!row) return;
   row.innerHTML = "";
   var chips = I18N[currentLang].chips;
   for (var i = 0; i < chips.length; i++) {
@@ -901,7 +891,7 @@ function renderChips() {
 // Core
 // ──────────────────────────────────────
 function escHtml(s) {
-  if (!s) return s;
+  if (!s) return "";
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
@@ -1111,7 +1101,7 @@ function renderSpecList(specs) {
     })(s);
     item.ondragstart = (function(num) {
       return function(e) {
-        dragSrcNum = num;
+        dragSrcNum = String(num);
         this.classList.add("dragging");
         e.dataTransfer.effectAllowed = "move";
       };
@@ -1138,14 +1128,18 @@ function renderSpecList(specs) {
       return function(e) {
         e.preventDefault();
         this.classList.remove("drag-over");
-        if (dragSrcNum === itemNum) return;
+        var srcNum = String(dragSrcNum);
+        var dstNum = String(itemNum);
+        if (srcNum === dstNum) return;
         var items = container.querySelectorAll(".spec-item");
         var order = [];
         for (var j = 0; j < items.length; j++) order.push(items[j].dataset.num);
-        var fromIdx = order.indexOf(dragSrcNum);
+        var fromIdx = order.indexOf(srcNum);
+        if (fromIdx === -1) return;
         order.splice(fromIdx, 1);
-        var toIdx = order.indexOf(itemNum);
-        order.splice(toIdx, 0, dragSrcNum);
+        var toIdx = order.indexOf(dstNum);
+        if (toIdx === -1) return;
+        order.splice(toIdx, 0, srcNum);
         showReorderLoading();
         parent.postMessage({ pluginMessage: { type: "reorder-specs", order: order } }, "*");
       };
@@ -1313,6 +1307,7 @@ window.onmessage = function(e) {
     currentNodeId = msg.nodeId;
     if (msg.color) { selectedColor = msg.color; pickColor(msg.color); }
     document.getElementById("nodeBadge").style.background = msg.color || selectedColor || "#F24E1E";
+    markClean();
   }
   if (msg.type === "specs-listed") renderSpecList(msg.specs || []);
   if (msg.type === "write-success") {
@@ -1326,6 +1321,9 @@ window.onmessage = function(e) {
   if (msg.type === "batch-done") parent.postMessage({ pluginMessage: { type: "list-specs" } }, "*");
   if (msg.type === "delete-done") {
     clearDesc();
+    currentNodeId = null;
+    document.getElementById("selEmpty").style.display = "flex";
+    document.getElementById("selContent").style.display = "none";
     updateDeleteBtn(false);
     parent.postMessage({ pluginMessage: { type: "list-specs" } }, "*");
   }
@@ -1343,10 +1341,16 @@ window.onmessage = function(e) {
     refreshList();
   }
   if (msg.type === "page-changed") {
-    // 페이지 이동 시 Annotations 탭 자동 갱신
+    // 페이지 이동 시 Edit 탭 초기화 + Annotations 탭 갱신
+    clearDesc();
+    currentNodeId = null;
+    document.getElementById("selEmpty").style.display = "flex";
+    document.getElementById("selContent").style.display = "none";
+    updateDeleteBtn(false);
     parent.postMessage({ pluginMessage: { type: "list-specs" } }, "*");
   }
 };
+
 parent.postMessage({ pluginMessage: { type: "init" } }, "*");
 
 // Cmd+S / Ctrl+S 단축키로 저장
@@ -1358,4 +1362,5 @@ document.addEventListener("keydown", function(e) {
     }
   }
 });
+
 </script>

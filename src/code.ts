@@ -462,9 +462,14 @@ function createSpecPanel(title: string, desc: string, num: string | number, targ
     }
   }
 
-  // Sub items with auto-lettering
+  // Sub items with auto-lettering (a-z, then aa, ab, ...)
   for (let si = 0; si < parsed.sub.length; si++) {
-    const letter: string = String.fromCharCode(97 + si);
+    let letter: string;
+    if (si < 26) {
+      letter = String.fromCharCode(97 + si);
+    } else {
+      letter = String.fromCharCode(97 + Math.floor((si - 26) / 26)) + String.fromCharCode(97 + (si % 26));
+    }
     tagRow("sub", letter + ") " + parsed.sub[si], false);
     hasProps = true;
   }
@@ -520,26 +525,27 @@ function stripPrefix(name: string): string {
 }
 
 function getNextNum(): number {
-  // 캐시된 최대 번호 확인 (성능 최적화)
-  const cached: string = figma.currentPage.getPluginData("airMaxNum") || "";
-  if (cached && parseInt(cached) > 0) {
-    // 캐시가 있고 유효하면 캐시를 신뢰하고 다음 번호 반환
-    const next: number = parseInt(cached) + 1;
-    figma.currentPage.setPluginData("airMaxNum", String(next));
-    return next;
-  }
-  // 캐시가 없거나 0이면 전체 스캔 수행
+  // 항상 페이지 스캔 수행하여 실제 최대 번호 확인
   let max: number = 0;
   const children: readonly SceneNode[] = figma.currentPage.children;
   for (let i = 0; i < children.length; i++) {
-    const m: RegExpMatchArray | null = children[i].name.match(/^\[AIR-(\d+)\]/) ||
-            children[i].name.match(/^📋 Annotation: (\d+)/) ||
-            children[i].name.match(/^📋 Spec: (\d+)/);
+    const c: SceneNode = children[i];
+    const m: RegExpMatchArray | null = c.name.match(/^\[AIR-(\d+)\]/) ||
+            c.name.match(/^📋 Annotation: (\d+)/) ||
+            c.name.match(/^📋 Spec: (\d+)/) ||
+            c.name.match(/^__specData_(\d+)__/) ||
+            c.name.match(/^🏷️ (\d+)/);
     if (m) { const n: number = parseInt(m[1]); if (n > max) max = n; }
   }
-  // 캐시 갱신 (반환하는 번호를 저장해야 신뢰 경로와 일치)
-  figma.currentPage.setPluginData("airMaxNum", String(max + 1));
-  return max + 1;
+  // 캐시와 비교하여 더 큰 값 사용 (중첩 노드 등 스캔 누락 대비)
+  const cached: string = figma.currentPage.getPluginData("airMaxNum") || "";
+  if (cached) {
+    const cachedNum: number = parseInt(cached);
+    if (cachedNum > max) max = cachedNum;
+  }
+  const next: number = max + 1;
+  figma.currentPage.setPluginData("airMaxNum", String(next));
+  return next;
 }
 
 // ──────────────────────────────────────
@@ -553,13 +559,26 @@ async function removeExistingArtifacts(num: string | number): Promise<void> {
 
   let targetNodeId: string = "";
   const children: readonly SceneNode[] = figma.currentPage.children;
+  // 1차 패스: targetNodeId 수집 (삭제 전에 패널과 데이터 노드 모두에서)
+  for (let i = 0; i < children.length; i++) {
+    const c: SceneNode = children[i];
+    const n: string = c.name;
+    if (!targetNodeId && (n === panelName || n === oldPanelName)) {
+      try { targetNodeId = c.getPluginData("targetNodeId") || ""; } catch(e) {}
+    }
+    if (!targetNodeId && n === dataName && c.type === "TEXT") {
+      try {
+        const raw: string = (c as TextNode).characters || "";
+        const tm: RegExpMatchArray | null = raw.match(/target:[ ]*(.*)/);
+        if (tm && tm[1].trim()) targetNodeId = tm[1].trim();
+      } catch(e) {}
+    }
+  }
+  // 2차 패스: 산출물 삭제
   for (let i = children.length - 1; i >= 0; i--) {
     const c: SceneNode = children[i];
     const n: string = c.name;
-    if (n === panelName || n === oldPanelName) {
-      try { targetNodeId = c.getPluginData("targetNodeId") || ""; } catch(e) {}
-      c.remove();
-    } else if (n === markerName || n === dataName) {
+    if (n === panelName || n === oldPanelName || n === markerName || n === dataName) {
       c.remove();
     }
   }
@@ -883,7 +902,13 @@ async function updateSpecIndex(): Promise<void> {
         if (!dl) continue;
         if (dl.match(/^\[sub\]/)) {
           const subVal: string = dl.replace(/^\[sub\]\s*/, "");
-          lines.push("  " + sp.num + "-" + String.fromCharCode(97 + subIdx) + ") " + subVal);
+          let subLetter: string;
+          if (subIdx < 26) {
+            subLetter = String.fromCharCode(97 + subIdx);
+          } else {
+            subLetter = String.fromCharCode(97 + Math.floor((subIdx - 26) / 26)) + String.fromCharCode(97 + (subIdx % 26));
+          }
+          lines.push("  " + sp.num + "-" + subLetter + ") " + subVal);
           subIdx++;
         } else {
           lines.push("  " + dl);
@@ -1039,9 +1064,12 @@ async function readSelectedDesc(): Promise<void> {
       if (seq !== _readSelectionSeq) return;
       if (targetNode) {
         _readingSelection = true;
-        figma.currentPage.selection = [targetNode as SceneNode];
-        figma.viewport.scrollAndZoomIntoView([targetNode as SceneNode]);
-        _readingSelection = false;
+        try {
+          figma.currentPage.selection = [targetNode as SceneNode];
+          figma.viewport.scrollAndZoomIntoView([targetNode as SceneNode]);
+        } finally {
+          _readingSelection = false;
+        }
         return;
       }
     }
@@ -1129,14 +1157,15 @@ async function writeSpec(nodeId: string, title: string, desc: string, num: strin
 
   try {
     let currentNum: string = num;
+    if (!currentNum) {
+      const em: RegExpMatchArray | null = node.name.match(/^\[AIR-(\d+)\]/);
+      if (em) currentNum = em[1];
+    }
     if (currentNum) {
       const cleanName: string = stripPrefix(node.name);
       const summary: string = makeSummary(desc);
       const displayTitle: string = title || cleanName;
       node.name = "[AIR-" + currentNum + "] " + displayTitle + summary;
-    } else {
-      const em: RegExpMatchArray | null = node.name.match(/^\[AIR-(\d+)\]/);
-      if (em) currentNum = em[1];
     }
     if (!currentNum) return { ok: false, error: "번호가 없습니다." };
 
@@ -1156,7 +1185,11 @@ async function writeSpec(nodeId: string, title: string, desc: string, num: strin
     }
 
     await removeExistingArtifacts(currentNum);
-    if (!desc || !desc.trim()) return { ok: true };
+    if (!desc || !desc.trim()) {
+      // desc가 비어있으면 [AIR-N] 접두사 제거 (고아 방지)
+      node.name = stripPrefix(node.name);
+      return { ok: true };
+    }
 
     const panel: FrameNode = createSpecPanel(title, desc, currentNum, node as SceneNode, markerColor);
     figma.currentPage.appendChild(panel);
@@ -1201,16 +1234,15 @@ async function applyBatch(mappings: BatchMapping[]): Promise<BatchResult> {
   let success: number = 0, fail: number = 0;
   const errors: string[] = [];
   const nextNum: number = getNextNum();
+  // 배치 시작 전 캐시를 전체 범위로 즉시 갱신 (레이스 방지)
+  const maxBatchNum: number = nextNum + mappings.length - 1;
+  figma.currentPage.setPluginData("airMaxNum", String(maxBatchNum));
   for (let i = 0; i < mappings.length; i++) {
     const m: BatchMapping = mappings[i];
     const num: number = nextNum + i;
     const result: WriteResult = await writeSpec(m.nodeId, m.title || "", m.description, String(num), m.color || "");
     if (result.ok) success++;
     else { fail++; errors.push(result.error!); }
-  }
-  // 배치 완료 후 캐시를 실제 최대 번호로 갱신 (번호 충돌 방지)
-  if (mappings.length > 1) {
-    figma.currentPage.setPluginData("airMaxNum", String(nextNum + mappings.length - 1));
   }
   return { success: success, fail: fail, errors: errors };
 }
@@ -1579,11 +1611,18 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
         if (!seen[mnum]) { allNums.push(mnum); seen[mnum] = true; }
         continue;
       }
-      // Also collect nums from hidden data nodes (may not have panel/marker)
+      // Also collect nums and target IDs from hidden data nodes (may not have panel/marker)
       const dm: RegExpMatchArray | null = c.name.match(/__specData_(\d+)__/);
       if (dm) {
         const dnum: number = parseInt(dm[1]);
         if (!seen[dnum]) { allNums.push(dnum); seen[dnum] = true; }
+        if (c.type === "TEXT") {
+          try {
+            const raw: string = (c as TextNode).characters || "";
+            const tm: RegExpMatchArray | null = raw.match(/target:[ ]*(.*)/);
+            if (tm && tm[1].trim()) targetNodeIds.push(tm[1].trim());
+          } catch(e) {}
+        }
       }
     }
 

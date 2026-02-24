@@ -8,8 +8,8 @@ AIR (AI-Readable Annotator) is a **Figma plugin** that lets designers annotate U
 
 ## Commands
 
-- **Build:** `npm run build` — compiles `src/code.ts` → `code.js` via esbuild (IIFE format)
-- **Watch:** `npm run watch` — rebuild on file changes
+- **Build:** `npm run build` — compiles `src/code.ts` → `code.js` via esbuild (IIFE format), assembles `src/ui/` → `ui.html`
+- **Watch:** `npm run watch` — rebuild on file changes (both `code.ts` and `src/ui/`)
 - **Type check:** `npm run typecheck` — runs `tsc --noEmit` with strict mode
 - **Run tests:** `npm test` — runs `node test.js`
 
@@ -19,16 +19,18 @@ AIR (AI-Readable Annotator) is a **Figma plugin** that lets designers annotate U
 
 - **`src/code.ts`** — TypeScript source for Figma's sandbox (main thread). Has access to the Figma document API (`figma.*`). Creates/reads/deletes nodes on the canvas. Compiled to `code.js` by esbuild.
 - **`code.js`** — Build output (IIFE bundle). Referenced by `manifest.json`. Do not edit directly.
-- **`ui.html`** — Plugin UI (iframe). Contains all HTML, CSS, and client-side JS in a single file. No framework; vanilla JS.
+- **`ui.html`** — Plugin UI (iframe). Build output assembled from `src/ui/` source files. Do not edit directly.
+- **`src/ui/`** — UI source files split into `styles.css`, `template.html`, and 9 JS modules (`i18n.js`, `lang.js`, `theme.js`, `core.js`, `export.js`, `list.js`, `onboarding.js`, `messages.js`, `init.js`). No framework; vanilla JS.
 - **Communication:** `figma.ui.postMessage()` (code→UI) and `parent.postMessage({ pluginMessage: ... })` (UI→code). Message types are string-keyed (e.g., `"write-desc"`, `"list-specs"`, `"delete-spec"`).
 - **`manifest.json`** — Figma plugin manifest. `editorType: ["figma"]`, no network access, `documentAccess: "dynamic-page"`.
 
 ### Build pipeline
 
-- **Source:** `src/code.ts` (single file, no splitting)
-- **Bundler:** esbuild (`esbuild.mjs`) — IIFE format, ES2015 target, UTF-8 charset
+- **Source:** `src/code.ts` (single file, no splitting) + `src/ui/` (CSS, HTML, JS modules)
+- **Bundler:** esbuild (`esbuild.mjs`) — IIFE format, ES2015 target, UTF-8 charset for code.ts; custom `buildUI()` function assembles `src/ui/` → `ui.html`
 - **Type checking:** `tsc --noEmit` with `strict: true`, types from `@figma/plugin-typings`
-- **Output:** `code.js` (root directory, referenced by `manifest.json`)
+- **Output:** `code.js` + `ui.html` (root directory, both referenced by `manifest.json`)
+- **UI JS concatenation order:** i18n → lang → theme → core → export → list → onboarding → messages → init. All functions use `function` keyword (hoisted). `init.js` must be last (contains immediate execution code).
 
 ### Data model
 
@@ -55,7 +57,7 @@ Light/dark themes for annotation panels (not the plugin UI, which uses Figma's `
 
 ### i18n
 
-English (`en`) and Korean (`ko`) via the `I18N` object in `ui.html`. Applied through `data-i18n`, `data-i18n-html`, `data-i18n-ph`, `data-i18n-tip` attributes.
+English (`en`) and Korean (`ko`) via the `I18N` object in `src/ui/i18n.js`. Applied through `data-i18n`, `data-i18n-html`, `data-i18n-ph`, `data-i18n-tip` attributes.
 
 ### Migration compatibility
 
