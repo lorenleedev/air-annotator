@@ -22,8 +22,16 @@ interface ThemeColors {
   divider: RGB;
   footer: RGB;
   warnText: RGB;
+  linkText: RGB;
   shadow: number;
   tags: Record<string, TagColors>;
+}
+
+interface TextSegment {
+  text: string;
+  bold: boolean;
+  italic: boolean;
+  url: string;
 }
 
 interface ParsedTags {
@@ -34,7 +42,6 @@ interface ParsedTags {
   ux: string[];
   warn: string[];
   memo: string[];
-  sub: string[];
 }
 
 interface HiddenData {
@@ -154,11 +161,12 @@ const THEMES: Record<string, ThemeColors> = {
     title:      { r: 0.10, g: 0.10, b: 0.10 },
     subtitle:   { r: 0.60, g: 0.60, b: 0.60 },
     text:       { r: 0.22, g: 0.25, b: 0.32 },
-    descBg:     { r: 0.98, g: 0.98, b: 0.98 },
-    descText:   { r: 0.29, g: 0.33, b: 0.39 },
-    divider:    { r: 0.95, g: 0.96, b: 0.96 },
+    descBg:     { r: 0.97, g: 0.97, b: 0.98 },
+    descText:   { r: 0.23, g: 0.26, b: 0.31 },
+    divider:    { r: 0.85, g: 0.86, b: 0.88 },
     footer:     { r: 0.69, g: 0.69, b: 0.69 },
     warnText:   { r: 0.76, g: 0.25, b: 0.05 },
+    linkText:   { r: 0.05, g: 0.45, b: 0.85 },
     shadow:     0.08,
     tags: {
       route: { bg: { r: 0.93, g: 0.95, b: 1.00 }, text: { r: 0.31, g: 0.27, b: 0.90 } },
@@ -168,7 +176,6 @@ const THEMES: Record<string, ThemeColors> = {
       warn:  { bg: { r: 1.00, g: 0.97, b: 0.93 }, text: { r: 0.92, g: 0.35, b: 0.05 } },
       memo:  { bg: { r: 0.96, g: 0.96, b: 0.96 }, text: { r: 0.45, g: 0.45, b: 0.45 } },
       ux:    { bg: { r: 0.99, g: 0.96, b: 1.00 }, text: { r: 0.66, g: 0.33, b: 0.95 } },
-      sub:   { bg: { r: 0.94, g: 0.97, b: 0.94 }, text: { r: 0.18, g: 0.54, b: 0.34 } },
     }
   },
   dark: {
@@ -178,10 +185,11 @@ const THEMES: Record<string, ThemeColors> = {
     subtitle:   { r: 0.44, g: 0.44, b: 0.44 },
     text:       { r: 0.82, g: 0.84, b: 0.86 },
     descBg:     { r: 0.15, g: 0.15, b: 0.15 },
-    descText:   { r: 0.69, g: 0.69, b: 0.69 },
-    divider:    { r: 0.18, g: 0.18, b: 0.18 },
+    descText:   { r: 0.73, g: 0.73, b: 0.75 },
+    divider:    { r: 0.28, g: 0.28, b: 0.30 },
     footer:     { r: 0.33, g: 0.33, b: 0.33 },
     warnText:   { r: 0.98, g: 0.57, b: 0.24 },
+    linkText:   { r: 0.40, g: 0.65, b: 1.00 },
     shadow:     0.3,
     tags: {
       route: { bg: { r: 0.15, g: 0.15, b: 0.28 }, text: { r: 0.51, g: 0.55, b: 0.97 } },
@@ -191,7 +199,6 @@ const THEMES: Record<string, ThemeColors> = {
       warn:  { bg: { r: 0.23, g: 0.10, b: 0.03 }, text: { r: 0.98, g: 0.57, b: 0.24 } },
       memo:  { bg: { r: 0.15, g: 0.15, b: 0.15 }, text: { r: 0.64, g: 0.64, b: 0.64 } },
       ux:    { bg: { r: 0.18, g: 0.07, b: 0.22 }, text: { r: 0.75, g: 0.52, b: 0.99 } },
-      sub:   { bg: { r: 0.10, g: 0.18, b: 0.12 }, text: { r: 0.45, g: 0.82, b: 0.55 } },
     }
   }
 };
@@ -206,6 +213,8 @@ const PANEL_GAP: number = 60;
 let fontLoaded: boolean = false;
 let FONT_R: FontName | undefined;
 let FONT_B: FontName | undefined;
+let FONT_I: FontName | undefined;
+let FONT_BI: FontName | undefined;
 
 async function loadFonts(): Promise<void> {
   const families: string[] = ["Inter", "Roboto", "Arial"];
@@ -216,6 +225,15 @@ async function loadFonts(): Promise<void> {
       FONT_R = { family: families[i], style: "Regular" };
       FONT_B = { family: families[i], style: "Bold" };
       fontLoaded = true;
+      // Attempt italic variants with fallback
+      try {
+        await figma.loadFontAsync({ family: families[i], style: "Italic" });
+        FONT_I = { family: families[i], style: "Italic" };
+      } catch(e) { FONT_I = FONT_R; }
+      try {
+        await figma.loadFontAsync({ family: families[i], style: "Bold Italic" });
+        FONT_BI = { family: families[i], style: "Bold Italic" };
+      } catch(e) { FONT_BI = FONT_B; }
       return;
     } catch(e) {}
   }
@@ -235,6 +253,44 @@ function txt(text: string, size: number, color: RGB | undefined, bold: boolean):
   t.fontSize = size || 11;
   if (color) t.fills = [{ type: "SOLID", color: color }];
   t.textAutoResize = "WIDTH_AND_HEIGHT";
+  return t;
+}
+
+function txtFormatted(input: string, size: number, color: RGB | undefined, linkColor: RGB): TextNode {
+  const segments: TextSegment[] = parseInlineFormat(input);
+  let plainText: string = "";
+  for (let si = 0; si < segments.length; si++) {
+    plainText += segments[si].text;
+  }
+  const t: TextNode = figma.createText();
+  if (!FONT_R) throw new Error("Regular font not loaded");
+  t.fontName = FONT_R;
+  t.characters = plainText || " ";
+  t.fontSize = size || 11;
+  if (color) t.fills = [{ type: "SOLID", color: color }];
+  t.textAutoResize = "WIDTH_AND_HEIGHT";
+  // Apply per-segment formatting
+  let offset: number = 0;
+  for (let si = 0; si < segments.length; si++) {
+    const seg: TextSegment = segments[si];
+    const len: number = seg.text.length;
+    if (len === 0) { continue; }
+    const start: number = offset;
+    const end: number = offset + len;
+    if (seg.bold && seg.italic && FONT_BI) {
+      t.setRangeFontName(start, end, FONT_BI);
+    } else if (seg.bold && FONT_B) {
+      t.setRangeFontName(start, end, FONT_B);
+    } else if (seg.italic && FONT_I) {
+      t.setRangeFontName(start, end, FONT_I);
+    }
+    if (seg.url) {
+      t.setRangeHyperlink(start, end, { type: "URL", value: seg.url });
+      t.setRangeFills(start, end, [{ type: "SOLID", color: linkColor }]);
+      t.setRangeTextDecoration(start, end, "UNDERLINE");
+    }
+    offset = end;
+  }
   return t;
 }
 
@@ -275,25 +331,56 @@ function hexToRgb(hex: string): RGB {
 
 // 태그 파싱
 function parseTags(desc: string): ParsedTags {
-  const result: ParsedTags = { desc: [], route: [], auth: [], api: [], ux: [], warn: [], memo: [], sub: [] };
+  const result: ParsedTags = { desc: [], route: [], auth: [], api: [], ux: [], warn: [], memo: [] };
   if (!desc) return result;
   const lines: string[] = desc.split("\n");
   for (let i = 0; i < lines.length; i++) {
     const line: string = lines[i].trim();
-    if (!line) continue;
+    if (!line) { result.desc.push(""); continue; }
     if (line.match(/^\[route\]/)) result.route.push(line.replace(/^\[route\]\s*/, ""));
     else if (line.match(/^\[auth\]/)) result.auth.push(line.replace(/^\[auth\]\s*/, ""));
     else if (line.match(/^\[api\]/)) result.api.push(line.replace(/^\[api\]\s*/, ""));
     else if (line.match(/^\[ux\]/)) result.ux.push(line.replace(/^\[ux\]\s*/, ""));
     else if (line.match(/^\[warn\]/)) result.warn.push(line.replace(/^\[warn\]\s*/, ""));
     else if (line.match(/^\[memo\]/)) result.memo.push(line.replace(/^\[memo\]\s*/, ""));
-    else if (line.match(/^\[sub\]/)) result.sub.push(line.replace(/^\[sub\]\s*/, ""));
     else {
       const dm: RegExpMatchArray | null = line.match(/^\[desc\]\s*(.*)/);
       result.desc.push(dm ? dm[1] : line);
     }
   }
   return result;
+}
+
+// 인라인 서식 파싱 (bold, italic, URL)
+function parseInlineFormat(input: string): TextSegment[] {
+  if (!input) return [{ text: "", bold: false, italic: false, url: "" }];
+  const segments: TextSegment[] = [];
+  const re: RegExp = /(\*\*\*(.+?)\*\*\*)|(\*\*(.+?)\*\*)|(\*(.+?)\*)|(https?:\/\/[^\s\x29]+)/g;
+  let lastIndex: number = 0;
+  let m: RegExpExecArray | null = re.exec(input);
+  while (m !== null) {
+    if (m.index > lastIndex) {
+      segments.push({ text: input.substring(lastIndex, m.index), bold: false, italic: false, url: "" });
+    }
+    if (m[1]) {
+      segments.push({ text: m[2], bold: true, italic: true, url: "" });
+    } else if (m[3]) {
+      segments.push({ text: m[4], bold: true, italic: false, url: "" });
+    } else if (m[5]) {
+      segments.push({ text: m[6], bold: false, italic: true, url: "" });
+    } else if (m[7]) {
+      segments.push({ text: m[7], bold: false, italic: false, url: m[7] });
+    }
+    lastIndex = m.index + m[0].length;
+    m = re.exec(input);
+  }
+  if (lastIndex < input.length) {
+    segments.push({ text: input.substring(lastIndex), bold: false, italic: false, url: "" });
+  }
+  if (segments.length === 0) {
+    segments.push({ text: input, bold: false, italic: false, url: "" });
+  }
+  return segments;
 }
 
 // 레이어명 요약 생성
@@ -357,19 +444,26 @@ function createSpecPanel(title: string, desc: string, num: string | number, targ
   numBadge.appendChild(numText);
   header.appendChild(numBadge);
 
-  // Title column
-  const titleCol: FrameNode = alFrame("titleCol", "VERTICAL", 0, 1);
-  titleCol.primaryAxisSizingMode = "AUTO";
-  titleCol.counterAxisSizingMode = "AUTO";
+  // Title + subtitle as single TextNode
   const headerLabel: string = title || "Annotation";
-  titleCol.appendChild(txt(headerLabel, 13, th.title, true));
   const now: Date = new Date();
   const pad = function(n: number): string { return n < 10 ? "0" + n : String(n); };
   const updatedAt: string = now.getFullYear() + "-" + pad(now.getMonth() + 1) + "-" + pad(now.getDate()) + " " + pad(now.getHours()) + ":" + pad(now.getMinutes()) + ":" + pad(now.getSeconds());
   const userName: string = figma.currentUser ? figma.currentUser.name : "";
-  const subtitleText: string = userName ? updatedAt + " · " + userName : updatedAt;
-  titleCol.appendChild(txt(subtitleText, 10, th.subtitle, false));
-  header.appendChild(titleCol);
+  const subtitleStr: string = userName ? updatedAt + " · " + userName : updatedAt;
+  const titleFull: string = headerLabel + "\n" + subtitleStr;
+  const titleNode: TextNode = figma.createText();
+  if (!FONT_B) throw new Error("Bold font not loaded");
+  titleNode.fontName = FONT_B;
+  titleNode.characters = titleFull;
+  titleNode.fontSize = 13;
+  titleNode.fills = [{ type: "SOLID", color: th.title }];
+  titleNode.textAutoResize = "WIDTH_AND_HEIGHT";
+  const subStart: number = headerLabel.length + 1;
+  if (FONT_R) titleNode.setRangeFontName(subStart, titleFull.length, FONT_R);
+  titleNode.setRangeFontSize(subStart, titleFull.length, 10);
+  titleNode.setRangeFills(subStart, titleFull.length, [{ type: "SOLID", color: th.subtitle }]);
+  header.appendChild(titleNode);
   panel.appendChild(header);
 
   // Header border
@@ -381,24 +475,53 @@ function createSpecPanel(title: string, desc: string, num: string | number, targ
   panel.appendChild(hBorder);
 
   // ── Body ──
-  const body: FrameNode = alFrame("body", "VERTICAL", 0, 12);
+  const body: FrameNode = alFrame("body", "VERTICAL", 0, 10);
   body.paddingTop = 14; body.paddingBottom = 10;
   body.paddingLeft = 18; body.paddingRight = 18;
   body.layoutAlign = "STRETCH";
   body.primaryAxisSizingMode = "AUTO";
   body.counterAxisSizingMode = "FIXED";
 
-  // Description block
-  if (parsed.desc.length > 0) {
-    const descBlock: FrameNode = alFrame("descBlock", "VERTICAL", 0, 4);
-    descBlock.paddingTop = 10; descBlock.paddingBottom = 10;
-    descBlock.paddingLeft = 12; descBlock.paddingRight = 12;
+  // Description block — split by "--" lines into sections with dividers
+  let hasDesc: boolean = false;
+  for (let di = 0; di < parsed.desc.length; di++) {
+    if (parsed.desc[di] && parsed.desc[di] !== "--") { hasDesc = true; break; }
+  }
+  if (hasDesc) {
+    const descBlock: FrameNode = alFrame("descBlock", "VERTICAL", 0, 6);
+    descBlock.paddingTop = 12; descBlock.paddingBottom = 12;
+    descBlock.paddingLeft = 14; descBlock.paddingRight = 14;
     descBlock.cornerRadius = 8;
     descBlock.fills = [{ type: "SOLID", color: th.descBg }];
     descBlock.layoutAlign = "STRETCH";
     descBlock.counterAxisSizingMode = "AUTO";
+    // Group desc lines into sections separated by "--"
+    const descSections: string[][] = [[]];
     for (let di = 0; di < parsed.desc.length; di++) {
-      const dt: TextNode = txt(parsed.desc[di], 11.5, th.descText, false);
+      if (parsed.desc[di] === "--") {
+        descSections.push([]);
+      } else {
+        descSections[descSections.length - 1].push(parsed.desc[di]);
+      }
+    }
+    let firstSection: boolean = true;
+    for (let si = 0; si < descSections.length; si++) {
+      let hasSectionContent: boolean = false;
+      for (let li = 0; li < descSections[si].length; li++) {
+        if (descSections[si][li]) { hasSectionContent = true; break; }
+      }
+      if (!hasSectionContent) continue;
+      if (!firstSection) {
+        const dv: FrameNode = figma.createFrame();
+        dv.name = "descDivider";
+        dv.resize(10, 1);
+        dv.layoutAlign = "STRETCH";
+        dv.fills = [{ type: "SOLID", color: th.divider }];
+        descBlock.appendChild(dv);
+      }
+      firstSection = false;
+      const sectionText: string = descSections[si].join("\n");
+      const dt: TextNode = txtFormatted(sectionText, 12, th.descText, th.linkText);
       dt.lineHeight = { value: 160, unit: "PERCENT" };
       dt.layoutAlign = "STRETCH";
       dt.textAutoResize = "HEIGHT";
@@ -407,39 +530,56 @@ function createSpecPanel(title: string, desc: string, num: string | number, targ
     body.appendChild(descBlock);
   }
 
-  // Tag row helper
+  // Tag row helper — single TextNode per row ("TAG  value" with range formatting)
   function tagRow(tagName: string, value: string, isWarn: boolean): void {
-    const row: FrameNode = alFrame("prop", "HORIZONTAL", 0, 8);
-    row.layoutAlign = "STRETCH";
-    row.counterAxisSizingMode = "AUTO";
-    row.counterAxisAlignItems = "MIN";
-
-    // Tag pill — same size as marker badge
     const tagColors: TagColors = th.tags[tagName] || th.tags.memo;
-    const pill: FrameNode = alFrame("tag", "HORIZONTAL", 0, 0);
-    pill.paddingTop = 2; pill.paddingBottom = 2;
-    pill.paddingLeft = 6; pill.paddingRight = 6;
-    pill.cornerRadius = 4;
-    pill.fills = [{ type: "SOLID", color: tagColors.bg }];
-    pill.primaryAxisSizingMode = "AUTO";
-    pill.counterAxisSizingMode = "AUTO";
-    pill.primaryAxisAlignItems = "CENTER";
-    pill.counterAxisAlignItems = "CENTER";
-    const tagLabel: TextNode = txt(tagName.toUpperCase(), 9, tagColors.text, true);
-    tagLabel.letterSpacing = { value: 0.5, unit: "PIXELS" };
-    pill.appendChild(tagLabel);
-    row.appendChild(pill);
-
-    // Value
+    const label: string = tagName.toUpperCase();
+    const gap: string = "  ";
+    const segments: TextSegment[] = parseInlineFormat(value);
+    let valuePlain: string = "";
+    for (let vi = 0; vi < segments.length; vi++) {
+      valuePlain += segments[vi].text;
+    }
+    const fullText: string = label + gap + valuePlain;
+    const t: TextNode = figma.createText();
+    if (!FONT_R) throw new Error("Regular font not loaded");
+    t.fontName = FONT_R;
+    t.characters = fullText || " ";
+    t.fontSize = 11.5;
     const valColor: RGB = isWarn ? th.warnText : th.text;
-    const valText: TextNode = txt(value, 11.5, valColor, false);
-    valText.lineHeight = { value: 150, unit: "PERCENT" };
-    valText.resize(10, valText.height);
-    valText.textAutoResize = "HEIGHT";
-    valText.layoutGrow = 1;
-    row.appendChild(valText);
-
-    body.appendChild(row);
+    t.fills = [{ type: "SOLID", color: valColor }];
+    t.lineHeight = { value: 150, unit: "PERCENT" };
+    t.layoutAlign = "STRETCH";
+    t.textAutoResize = "HEIGHT";
+    // Tag label styling
+    const labelEnd: number = label.length;
+    if (FONT_B) t.setRangeFontName(0, labelEnd, FONT_B);
+    t.setRangeFills(0, labelEnd, [{ type: "SOLID", color: tagColors.text }]);
+    t.setRangeLetterSpacing(0, labelEnd, { value: 0.5, unit: "PIXELS" });
+    t.setRangeFontSize(0, labelEnd, 9);
+    // Value inline formatting
+    let offset: number = labelEnd + gap.length;
+    for (let vi = 0; vi < segments.length; vi++) {
+      const seg: TextSegment = segments[vi];
+      const len: number = seg.text.length;
+      if (len === 0) { offset += len; continue; }
+      const start: number = offset;
+      const end: number = offset + len;
+      if (seg.bold && seg.italic && FONT_BI) {
+        t.setRangeFontName(start, end, FONT_BI);
+      } else if (seg.bold && FONT_B) {
+        t.setRangeFontName(start, end, FONT_B);
+      } else if (seg.italic && FONT_I) {
+        t.setRangeFontName(start, end, FONT_I);
+      }
+      if (seg.url) {
+        t.setRangeHyperlink(start, end, { type: "URL", value: seg.url });
+        t.setRangeFills(start, end, [{ type: "SOLID", color: th.linkText }]);
+        t.setRangeTextDecoration(start, end, "UNDERLINE");
+      }
+      offset = end;
+    }
+    body.appendChild(t);
   }
 
   // Render properties in order
@@ -462,18 +602,6 @@ function createSpecPanel(title: string, desc: string, num: string | number, targ
     }
   }
 
-  // Sub items with auto-lettering (a-z, then aa, ab, ...)
-  for (let si = 0; si < parsed.sub.length; si++) {
-    let letter: string;
-    if (si < 26) {
-      letter = String.fromCharCode(97 + si);
-    } else {
-      letter = String.fromCharCode(97 + Math.floor((si - 26) / 26)) + String.fromCharCode(97 + (si % 26));
-    }
-    tagRow("sub", letter + ") " + parsed.sub[si], false);
-    hasProps = true;
-  }
-
   let hasWarn: boolean = false;
   for (let wi = 0; wi < warnOrder.length; wi++) {
     if (warnOrder[wi].items.length > 0) hasWarn = true;
@@ -491,24 +619,6 @@ function createSpecPanel(title: string, desc: string, num: string | number, targ
   }
 
   panel.appendChild(body);
-
-  // ── Footer ──
-  const fBorder: FrameNode = figma.createFrame();
-  fBorder.name = "footerBorder";
-  fBorder.resize(PANEL_W, 1);
-  fBorder.layoutAlign = "STRETCH";
-  fBorder.fills = [{ type: "SOLID", color: th.divider }];
-  panel.appendChild(fBorder);
-
-  const footer: FrameNode = alFrame("footer", "HORIZONTAL", 0, 6);
-  footer.paddingTop = 8; footer.paddingBottom = 10;
-  footer.paddingLeft = 18; footer.paddingRight = 18;
-  footer.layoutAlign = "STRETCH";
-  footer.primaryAxisSizingMode = "AUTO";
-  footer.counterAxisSizingMode = "AUTO";
-  footer.counterAxisAlignItems = "CENTER";
-  footer.appendChild(txt("Click this panel → Edit Annotation (bottom of Inspector)", 9, th.footer, false));
-  panel.appendChild(footer);
 
   // Position
   panel.x = targetNode.absoluteTransform[0][2] + targetNode.width + PANEL_GAP;
@@ -896,23 +1006,10 @@ async function updateSpecIndex(): Promise<void> {
 
     if (sp.desc) {
       const descLines: string[] = sp.desc.split("\n");
-      let subIdx: number = 0;
       for (let d = 0; d < descLines.length; d++) {
         const dl: string = descLines[d].trim();
         if (!dl) continue;
-        if (dl.match(/^\[sub\]/)) {
-          const subVal: string = dl.replace(/^\[sub\]\s*/, "");
-          let subLetter: string;
-          if (subIdx < 26) {
-            subLetter = String.fromCharCode(97 + subIdx);
-          } else {
-            subLetter = String.fromCharCode(97 + Math.floor((subIdx - 26) / 26)) + String.fromCharCode(97 + (subIdx % 26));
-          }
-          lines.push("  " + sp.num + "-" + subLetter + ") " + subVal);
-          subIdx++;
-        } else {
-          lines.push("  " + dl);
-        }
+        lines.push("  " + dl);
       }
     }
     lines.push("");

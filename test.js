@@ -127,19 +127,18 @@ function hexToRgb(hex) {
 }
 
 function parseTags(desc) {
-  var result = { desc: [], route: [], auth: [], api: [], ux: [], warn: [], memo: [], sub: [] };
+  var result = { desc: [], route: [], auth: [], api: [], ux: [], warn: [], memo: [] };
   if (!desc) return result;
   var lines = desc.split("\n");
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i].trim();
-    if (!line) continue;
+    if (!line) { result.desc.push(""); continue; }
     if (line.match(/^\[route\]/)) result.route.push(line.replace(/^\[route\]\s*/, ""));
     else if (line.match(/^\[auth\]/)) result.auth.push(line.replace(/^\[auth\]\s*/, ""));
     else if (line.match(/^\[api\]/)) result.api.push(line.replace(/^\[api\]\s*/, ""));
     else if (line.match(/^\[ux\]/)) result.ux.push(line.replace(/^\[ux\]\s*/, ""));
     else if (line.match(/^\[warn\]/)) result.warn.push(line.replace(/^\[warn\]\s*/, ""));
     else if (line.match(/^\[memo\]/)) result.memo.push(line.replace(/^\[memo\]\s*/, ""));
-    else if (line.match(/^\[sub\]/)) result.sub.push(line.replace(/^\[sub\]\s*/, ""));
     else {
       var dm = line.match(/^\[desc\]\s*(.*)/);
       result.desc.push(dm ? dm[1] : line);
@@ -179,7 +178,6 @@ var THEMES = {
       warn:  { bg: { r: 1.00, g: 0.97, b: 0.93 }, text: { r: 0.92, g: 0.35, b: 0.05 } },
       memo:  { bg: { r: 0.96, g: 0.96, b: 0.96 }, text: { r: 0.45, g: 0.45, b: 0.45 } },
       ux:    { bg: { r: 0.99, g: 0.96, b: 1.00 }, text: { r: 0.66, g: 0.33, b: 0.95 } },
-      sub:   { bg: { r: 0.94, g: 0.97, b: 0.94 }, text: { r: 0.18, g: 0.54, b: 0.34 } },
     }
   },
   dark: {
@@ -192,7 +190,6 @@ var THEMES = {
       warn:  { bg: { r: 0.23, g: 0.10, b: 0.03 }, text: { r: 0.98, g: 0.57, b: 0.24 } },
       memo:  { bg: { r: 0.15, g: 0.15, b: 0.15 }, text: { r: 0.64, g: 0.64, b: 0.64 } },
       ux:    { bg: { r: 0.18, g: 0.07, b: 0.22 }, text: { r: 0.75, g: 0.52, b: 0.99 } },
-      sub:   { bg: { r: 0.10, g: 0.18, b: 0.12 }, text: { r: 0.45, g: 0.82, b: 0.55 } },
     }
   }
 };
@@ -324,9 +321,10 @@ suite("parseTags");
   var r3 = parseTags("이것은 일반 텍스트입니다.");
   assert("태그 없는 텍스트 → desc", eq(r3.desc, ["이것은 일반 텍스트입니다."]));
 
-  // 빈 줄 무시
+  // 빈 줄 → desc에 보존 (단락 구분용)
   var r4 = parseTags("[route] /a\n\n\n[auth] admin");
-  assert("빈 줄 무시", r4.route.length === 1 && r4.auth.length === 1);
+  assert("빈 줄 사이 태그 파싱 유지", r4.route.length === 1 && r4.auth.length === 1);
+  assert("빈 줄 → desc에 보존", r4.desc.length === 2 && r4.desc[0] === "" && r4.desc[1] === "");
 
   // null/undefined 입력
   var r5 = parseTags(null);
@@ -342,11 +340,18 @@ suite("parseTags");
   var r8 = parseTags("일반 설명\n[route] /home\n다른 설명");
   assert("혼합: 일반 텍스트 + 태그", r8.desc.length === 2 && r8.route.length === 1);
 
-  // [sub] 태그
-  var rs = parseTags("[sub] 이메일 검증\n[sub] 비밀번호 강도\n[api] POST /users");
-  assert("[sub] 태그 파싱", rs.sub.length === 2 && rs.api.length === 1);
-  assert("[sub] 값", rs.sub[0] === "이메일 검증");
-  assert("[sub] 두번째 값", rs.sub[1] === "비밀번호 강도");
+  // desc 사이 빈 줄 보존
+  var r9 = parseTags("첫 번째 단락\n\n두 번째 단락");
+  assert("desc 빈 줄 보존 → join 시 단락 구분", r9.desc.length === 3 && r9.desc[0] === "첫 번째 단락" && r9.desc[1] === "" && r9.desc[2] === "두 번째 단락");
+
+  // -- 구분선 → desc에 "--" 보존 (렌더 시 divider로 변환)
+  var r10 = parseTags("섹션 1\n--\n섹션 2");
+  assert("-- 구분선 → desc에 보존", r10.desc.length === 3 && r10.desc[0] === "섹션 1" && r10.desc[1] === "--" && r10.desc[2] === "섹션 2");
+
+  // -- 만 있는 경우
+  var r11 = parseTags("--");
+  assert("-- 만 있으면 desc에 포함", r11.desc.length === 1 && r11.desc[0] === "--");
+
 })();
 
 // ══════════════════════════════════════
@@ -408,19 +413,19 @@ suite("테마 시스템");
   currentTheme = "light";
   var lt = getTheme();
   assert("light 테마 배경 = 흰색", approx(lt.panelBg.r, 1));
-  assert("light 테마 태그 8종 존재", Object.keys(lt.tags).length === 8);
+  assert("light 테마 태그 7종 존재", Object.keys(lt.tags).length === 7);
 
   currentTheme = "dark";
   var dk = getTheme();
   assert("dark 테마 배경 = 어두운색", approx(dk.panelBg.r, 0.12));
-  assert("dark 테마 태그 8종 존재", Object.keys(dk.tags).length === 8);
+  assert("dark 테마 태그 7종 존재", Object.keys(dk.tags).length === 7);
 
   currentTheme = "invalid";
   assert("잘못된 테마 → light fallback", approx(getTheme().panelBg.r, 1));
 
   // 모든 태그에 bg/text 존재
   currentTheme = "light";
-  var tags = ["route", "auth", "desc", "api", "warn", "memo", "ux", "sub"];
+  var tags = ["route", "auth", "desc", "api", "warn", "memo", "ux"];
   var allHaveColors = tags.every(function(t) {
     return lt.tags[t] && lt.tags[t].bg && lt.tags[t].text;
   });
@@ -622,9 +627,6 @@ suite("UI 텍스트 일관성");
 
   // 패널 이름: "📋 Annotation:" 사용 (생성 부분)
   assert("패널 프레임 이름 = 📋 Annotation:", code.indexOf('alFrame("📋 Annotation: "') >= 0);
-
-  // footer 텍스트
-  assert("패널 footer 안내 텍스트 존재", code.indexOf("Click this panel") >= 0 && code.indexOf("Edit Annotation") >= 0);
 
   // 테마 토글 버튼 존재
   assert("테마 토글 버튼 존재", ui.indexOf('id="themeBtn"') >= 0);
@@ -845,6 +847,118 @@ suite("숨김/표시 기능");
   figma.currentPage.setPluginData("airHiddenNums", JSON.stringify(newSet));
   var afterDelete = JSON.parse(figma.currentPage.getPluginData("airHiddenNums"));
   assert("삭제 후 hidden set에서 제거됨", eq(afterDelete, [1, 5]));
+})();
+
+// ══════════════════════════════════════
+// 15. parseInlineFormat
+// ══════════════════════════════════════
+suite("parseInlineFormat");
+
+// Copy of parseInlineFormat for testing (matches src/code.ts logic)
+function parseInlineFormat(input) {
+  if (!input) return [{ text: "", bold: false, italic: false, url: "" }];
+  var segments = [];
+  var re = /(\*\*\*(.+?)\*\*\*)|(\*\*(.+?)\*\*)|(\*(.+?)\*)|(https?:\/\/[^\s\x29]+)/g;
+  var lastIndex = 0;
+  var m = re.exec(input);
+  while (m !== null) {
+    if (m.index > lastIndex) {
+      segments.push({ text: input.substring(lastIndex, m.index), bold: false, italic: false, url: "" });
+    }
+    if (m[1]) {
+      segments.push({ text: m[2], bold: true, italic: true, url: "" });
+    } else if (m[3]) {
+      segments.push({ text: m[4], bold: true, italic: false, url: "" });
+    } else if (m[5]) {
+      segments.push({ text: m[6], bold: false, italic: true, url: "" });
+    } else if (m[7]) {
+      segments.push({ text: m[7], bold: false, italic: false, url: m[7] });
+    }
+    lastIndex = m.index + m[0].length;
+    m = re.exec(input);
+  }
+  if (lastIndex < input.length) {
+    segments.push({ text: input.substring(lastIndex), bold: false, italic: false, url: "" });
+  }
+  if (segments.length === 0) {
+    segments.push({ text: input, bold: false, italic: false, url: "" });
+  }
+  return segments;
+}
+
+(function() {
+  // Plain text — no formatting
+  var r1 = parseInlineFormat("hello world");
+  assert("plain text → single segment", r1.length === 1 && r1[0].text === "hello world");
+  assert("plain text → no bold/italic/url", !r1[0].bold && !r1[0].italic && r1[0].url === "");
+
+  // Bold
+  var r2 = parseInlineFormat("say **hello** now");
+  assert("bold → 3 segments", r2.length === 3);
+  assert("bold → prefix plain", r2[0].text === "say " && !r2[0].bold);
+  assert("bold → bold segment", r2[1].text === "hello" && r2[1].bold && !r2[1].italic);
+  assert("bold → suffix plain", r2[2].text === " now" && !r2[2].bold);
+
+  // Italic
+  var r3 = parseInlineFormat("say *hello* now");
+  assert("italic → 3 segments", r3.length === 3);
+  assert("italic → italic segment", r3[1].text === "hello" && r3[1].italic && !r3[1].bold);
+
+  // Bold-italic
+  var r4 = parseInlineFormat("***both***");
+  assert("bold-italic → 1 segment", r4.length === 1);
+  assert("bold-italic → bold+italic", r4[0].text === "both" && r4[0].bold && r4[0].italic);
+
+  // URL
+  var r5 = parseInlineFormat("see https://example.com for info");
+  assert("URL → 3 segments", r5.length === 3);
+  assert("URL → prefix plain", r5[0].text === "see ");
+  assert("URL → url segment", r5[1].text === "https://example.com" && r5[1].url === "https://example.com");
+  assert("URL → suffix plain", r5[2].text === " for info");
+
+  // Mixed
+  var r6 = parseInlineFormat("**bold** and *italic* and https://a.com end");
+  assert("mixed → 6 segments", r6.length === 6);
+  assert("mixed → bold first", r6[0].text === "bold" && r6[0].bold);
+  assert("mixed → italic middle", r6[2].text === "italic" && r6[2].italic);
+  assert("mixed → url", r6[4].url === "https://a.com");
+
+  // Empty/null
+  var r7 = parseInlineFormat("");
+  assert("empty → single empty segment", r7.length === 1 && r7[0].text === "");
+  var r8 = parseInlineFormat(null);
+  assert("null → single empty segment", r8.length === 1 && r8[0].text === "");
+
+  // URL with parenthesis termination
+  var r9 = parseInlineFormat("(https://example.com)");
+  assert("URL stops at closing paren", r9[1].text === "https://example.com" && r9[1].url === "https://example.com");
+
+  // http:// URL
+  var r10 = parseInlineFormat("http://test.com");
+  assert("http URL detected", r10.length === 1 && r10[0].url === "http://test.com");
+
+  // No nested: bold wrapping does not produce hyperlink
+  var r11 = parseInlineFormat("**https://x.com**");
+  assert("bold URL → bold, not hyperlink", r11[0].bold && r11[0].url === "");
+})();
+
+// ══════════════════════════════════════
+// 16. code.js 인라인 서식 문자열 검증
+// ══════════════════════════════════════
+suite("code.js 인라인 서식 문자열 검증");
+
+(function() {
+  var fs = require("fs");
+  var code = fs.readFileSync(__dirname + "/code.js", "utf8");
+
+  assert("parseInlineFormat 함수 존재", code.indexOf("parseInlineFormat") >= 0);
+  assert("setRangeFontName 호출 존재", code.indexOf("setRangeFontName") >= 0);
+  assert("setRangeHyperlink 호출 존재", code.indexOf("setRangeHyperlink") >= 0);
+  assert("FONT_I 변수 존재", code.indexOf("FONT_I") >= 0);
+  assert("descDivider 구분선 존재", code.indexOf("descDivider") >= 0);
+  assert("FONT_BI 변수 존재", code.indexOf("FONT_BI") >= 0);
+  assert("txtFormatted 함수 존재", code.indexOf("txtFormatted") >= 0);
+  assert("linkText 테마 속성 존재", code.indexOf("linkText") >= 0);
 })();
 
 // ══════════════════════════════════════
