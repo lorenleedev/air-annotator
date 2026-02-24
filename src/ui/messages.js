@@ -4,7 +4,9 @@ window.onmessage = function(e) {
   if (msg.type === "init-done") {
     figmaFileKey = msg.fileKey || "";
     if (msg.theme) { panelTheme = msg.theme; updateThemeBtn(); }
+    canEdit = msg.canEdit !== false;
     initPalette(); applyLang();
+    if (!canEdit) applyViewMode();
   }
   if (msg.type === "selection-empty") {
     document.getElementById("selEmpty").style.display = "flex";

@@ -44,6 +44,20 @@ function renderSpecList(specs) {
           '<circle cx="2" cy="12" r="1.2"/><circle cx="6" cy="12" r="1.2"/>' +
         '</svg>' +
       '</div>';
+    // View-only: hide write controls in list items
+    if (!canEdit) {
+      item.querySelector(".spec-delete").style.display = "none";
+      item.querySelector(".spec-vis").style.display = "none";
+      item.querySelector(".spec-drag").style.display = "none";
+      item.setAttribute("draggable", "false");
+    }
+    // Number badge click → navigate to target on canvas
+    item.querySelector(".spec-num").onclick = (function(targetId) {
+      return function(e) {
+        e.stopPropagation();
+        if (targetId) parent.postMessage({ pluginMessage: { type: "select-node", nodeId: targetId } }, "*");
+      };
+    })(s.targetNodeId);
     // Eye toggle click
     item.querySelector(".spec-vis").onclick = (function(num, isHidden) {
       return function(e) {

@@ -8,6 +8,7 @@ function escHtml(s) {
 
 var currentNodeId = null;
 var selectedColor = "#F24E1E";
+var canEdit = true;
 var COLORS = ["#F24E1E", "#FF7262", "#A259FF", "#1ABCFE", "#0ACF83", "#0D0D0D"];
 
 function initPalette() {
@@ -102,3 +103,25 @@ function switchTab(id) {
 
 function refreshList() { parent.postMessage({ pluginMessage: { type: "list-specs" } }, "*"); }
 function rebuildIndex() { parent.postMessage({ pluginMessage: { type: "rebuild-index" } }, "*"); }
+
+function applyViewMode() {
+  // Hide write-only UI elements for view-only users
+  var ids = ["btnSave", "btnDelete", "colorPalette", "chipRow"];
+  for (var i = 0; i < ids.length; i++) {
+    var el = document.getElementById(ids[i]);
+    if (el) el.style.display = "none";
+  }
+  // Title → readonly
+  var title = document.getElementById("selTitle");
+  if (title) { title.readOnly = true; title.style.opacity = "0.7"; }
+  // Desc → readonly
+  var desc = document.getElementById("selDesc");
+  if (desc) { desc.readOnly = true; desc.style.opacity = "0.7"; }
+  // Hide theme toggle (writes pluginData)
+  var themeBtn = document.getElementById("themeBtn");
+  if (themeBtn) themeBtn.style.display = "none";
+  // Hide Index rebuild button
+  document.querySelectorAll(".list-btn").forEach(function(btn) {
+    if (btn.textContent === "Index" || btn.onclick === rebuildIndex) btn.style.display = "none";
+  });
+}

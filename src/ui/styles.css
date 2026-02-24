@@ -266,7 +266,9 @@
     min-width: 20px; height: auto; border-radius: 4px;
     font-size: 9px; font-weight: 700; padding: 2px 6px;
     display: flex; align-items: center; justify-content: center; color: #fff; flex-shrink: 0;
+    cursor: pointer; transition: filter 0.1s;
   }
+  .spec-num:hover { filter: brightness(1.15); }
   .spec-body { flex: 1; min-width: 0; }
   .spec-title-row { display: flex; align-items: center; gap: 6px; }
   .spec-title { font-weight: 500; font-size: 11px; color: var(--figma-color-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -269,7 +269,9 @@
     min-width: 20px; height: auto; border-radius: 4px;
     font-size: 9px; font-weight: 700; padding: 2px 6px;
     display: flex; align-items: center; justify-content: center; color: #fff; flex-shrink: 0;
+    cursor: pointer; transition: filter 0.1s;
   }
+  .spec-num:hover { filter: brightness(1.15); }
   .spec-body { flex: 1; min-width: 0; }
   .spec-title-row { display: flex; align-items: center; gap: 6px; }
   .spec-title { font-weight: 500; font-size: 11px; color: var(--figma-color-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -897,6 +899,7 @@ function escHtml(s) {
 
 var currentNodeId = null;
 var selectedColor = "#F24E1E";
+var canEdit = true;
 var COLORS = ["#F24E1E", "#FF7262", "#A259FF", "#1ABCFE", "#0ACF83", "#0D0D0D"];
 
 function initPalette() {
@@ -992,6 +995,28 @@ function switchTab(id) {
 function refreshList() { parent.postMessage({ pluginMessage: { type: "list-specs" } }, "*"); }
 function rebuildIndex() { parent.postMessage({ pluginMessage: { type: "rebuild-index" } }, "*"); }
 
+function applyViewMode() {
+  // Hide write-only UI elements for view-only users
+  var ids = ["btnSave", "btnDelete", "colorPalette", "chipRow"];
+  for (var i = 0; i < ids.length; i++) {
+    var el = document.getElementById(ids[i]);
+    if (el) el.style.display = "none";
+  }
+  // Title → readonly
+  var title = document.getElementById("selTitle");
+  if (title) { title.readOnly = true; title.style.opacity = "0.7"; }
+  // Desc → readonly
+  var desc = document.getElementById("selDesc");
+  if (desc) { desc.readOnly = true; desc.style.opacity = "0.7"; }
+  // Hide theme toggle (writes pluginData)
+  var themeBtn = document.getElementById("themeBtn");
+  if (themeBtn) themeBtn.style.display = "none";
+  // Hide Index rebuild button
+  document.querySelectorAll(".list-btn").forEach(function(btn) {
+    if (btn.textContent === "Index" || btn.onclick === rebuildIndex) btn.style.display = "none";
+  });
+}
+
 var cachedSpecs = [];
 var figmaFileKey = "";
 
@@ -1074,6 +1099,20 @@ function renderSpecList(specs) {
           '<circle cx="2" cy="12" r="1.2"/><circle cx="6" cy="12" r="1.2"/>' +
         '</svg>' +
       '</div>';
+    // View-only: hide write controls in list items
+    if (!canEdit) {
+      item.querySelector(".spec-delete").style.display = "none";
+      item.querySelector(".spec-vis").style.display = "none";
+      item.querySelector(".spec-drag").style.display = "none";
+      item.setAttribute("draggable", "false");
+    }
+    // Number badge click → navigate to target on canvas
+    item.querySelector(".spec-num").onclick = (function(targetId) {
+      return function(e) {
+        e.stopPropagation();
+        if (targetId) parent.postMessage({ pluginMessage: { type: "select-node", nodeId: targetId } }, "*");
+      };
+    })(s.targetNodeId);
     // Eye toggle click
     item.querySelector(".spec-vis").onclick = (function(num, isHidden) {
       return function(e) {
@@ -1294,7 +1333,9 @@ window.onmessage = function(e) {
   if (msg.type === "init-done") {
     figmaFileKey = msg.fileKey || "";
     if (msg.theme) { panelTheme = msg.theme; updateThemeBtn(); }
+    canEdit = msg.canEdit !== false;
     initPalette(); applyLang();
+    if (!canEdit) applyViewMode();
   }
   if (msg.type === "selection-empty") {
     document.getElementById("selEmpty").style.display = "flex";

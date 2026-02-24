@@ -1363,7 +1363,14 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
     // Restore saved theme
     const savedTheme: string = figma.root.getPluginData("airTheme");
     if (savedTheme === "light" || savedTheme === "dark") currentTheme = savedTheme;
-    figma.ui.postMessage({ type: "init-done", fileKey: figma.fileKey || "", theme: currentTheme });
+    let canEdit: boolean = true;
+    try {
+      figma.root.setPluginData("__airEditTest__", "1");
+      figma.root.setPluginData("__airEditTest__", "");
+    } catch (e) {
+      canEdit = false;
+    }
+    figma.ui.postMessage({ type: "init-done", fileKey: figma.fileKey || "", theme: currentTheme, canEdit: canEdit });
     readSelectedDesc();
   }
 
