@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-AIR (AI-Readable Annotator) is a **Figma plugin** that lets designers annotate UI layers with structured tags so AI tools can parse design specs from a Figma link. Annotations are stored as visual panels on the canvas and as hidden data nodes within the Figma file.
+AIR (AI-Readable Annotator) is a **Figma plugin** that lets designers annotate UI layers with structured tags so AI tools can parse design specs from a Figma link. Annotations are stored as visual panels on the canvas and in a centralized index frame.
 
 ## Commands
 
@@ -34,12 +34,15 @@ AIR (AI-Readable Annotator) is a **Figma plugin** that lets designers annotate U
 
 ### Data model
 
-Each annotation produces three artifacts on the Figma canvas:
-1. **Panel** (`📋 Annotation: N`) — Visual card with header, tag rows, footer. Created via `createSpecPanel()`.
+Each annotation produces two artifacts on the Figma canvas:
+1. **Panel** (`📋 Annotation: N`) — Visual card with header, tag rows. Created via `createSpecPanel()`. Panel `pluginData` stores `specTags`, `targetNodeId`, `markerColor` as fallback.
 2. **Marker badge** (`🏷️ N`) — Small numbered badge placed on/near the target layer. Created via `createMarkerBadge()`.
-3. **Hidden data node** (`__specData_N__`) — Invisible locked text node storing raw annotation data in a custom format (`[AIRA:N]\ntitle: ...\ncolor: ...\ntarget: ...\n===\ndesc`). This is the primary data source; panel `pluginData` is a fallback.
+
+All annotation data is centralized in the **index frame** (`📑 AIR: AI-Readable Annotator Index`). Each annotation is stored as a `[AIRA:N]` block with `title`, `color`, `target` (Figma node ID), and description. This is the primary data source; panel `pluginData` is a fallback.
 
 Layer names get prefixed with `[AIR-N]` plus a summary (e.g., `[AIR-3] Login | api · ux`).
+
+Deleting annotations triggers automatic renumbering (`renumberAllSpecs()`) to keep numbers sequential (1, 2, 3...).
 
 ### Tag system
 
@@ -49,7 +52,7 @@ Annotations use bracket-prefixed tags parsed by `parseTags()`:
 
 ### AI spec index
 
-`updateSpecIndex()` generates a `📑 AIR: AI-Readable Annotator Index` frame — a machine-readable summary of all annotations on the current page, positioned to the far right of the canvas.
+`updateSpecIndex()` generates a `📑 AIR: AI-Readable Annotator Index` frame — the **sole data source** for all annotations on the current page, positioned to the far right of the canvas. The index contains structured `[AIRA:N]` blocks separated by `*---*`. On subsequent saves, the existing index frame's text is updated in-place (no delete→recreate) for performance. `parseIndexText()` parses the index content; `readIndexMap()` returns a `Map<string, HiddenData>`.
 
 ### Theme system
 
@@ -59,9 +62,9 @@ Light/dark themes for annotation panels (not the plugin UI, which uses Figma's `
 
 English (`en`) and Korean (`ko`) via the `I18N` object in `src/ui/i18n.js`. Applied through `data-i18n`, `data-i18n-html`, `data-i18n-ph`, `data-i18n-tip` attributes.
 
-### Migration compatibility
+### Tag rendering
 
-The plugin was renamed from "Spec" to "Annotation". All code that reads panel names checks both `📋 Annotation: N` and `📋 Spec: N`. New panels are always created with the "Annotation" name. When modifying panel name matching, always handle both old and new names.
+Tags in canvas panels are rendered in **user input order** (not grouped by category). The `parseTags()` function populates an `ordered: TagEntry[]` array alongside category arrays, and `createSpecPanel()` iterates `parsed.ordered`.
 
 ## Key Conventions
 
@@ -69,8 +72,8 @@ The plugin was renamed from "Spec" to "Annotation". All code that reads panel na
 - **Single file.** All plugin logic stays in `src/code.ts` — do not split into modules.
 - **Font loading** tries Inter → Roboto → Arial in order. `FONT_R`/`FONT_B` are `FontName | undefined`, set once at init.
 - **Panel width** is fixed at `PANEL_W = 360`. Gap from target is `PANEL_GAP = 60`.
-- **Numbering** is global per page, auto-incrementing from the max existing number. Cached in page `pluginData("airMaxNum")`.
+- **Numbering** is global per page, auto-incrementing from the max existing number. Uses scan-only (no cache) to allow number reuse after deletion.
 
 ## Testing
 
-Tests (`test.js`) mock the Figma API and test pure logic: tag parsing, numbering, hidden data read/write, layer scanning/filtering, migration compatibility, syntax validation, and UI text consistency. Tests read the built `code.js` for string checks (suites 10-12). Run with `npm test` — no test framework needed.
+Tests (`test.js`) mock the Figma API and test pure logic: tag parsing, numbering, hidden data read/write, layer scanning/filtering, index text parsing, inline formatting, syntax validation, and UI text consistency. Tests read the built `code.js` for string checks. Run with `npm test` — no test framework needed (164 tests).

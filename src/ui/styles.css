@@ -190,25 +190,19 @@
   .btn-danger { background: rgba(244,63,94,.1); color: #F43F5E; }
   .btn-danger:hover { background: rgba(244,63,94,.2); }
 
-  .spec-delete {
-    width: 24px; height: 24px; border: none; border-radius: 4px;
+  .spec-delete, .spec-vis {
+    width: 20px; height: 20px; border: none; border-radius: 4px;
     background: none; cursor: pointer; flex-shrink: 0;
     display: flex; align-items: center; justify-content: center;
     color: var(--figma-color-text-tertiary); opacity: 0; transition: all 0.15s;
   }
-  .spec-item:hover .spec-delete { opacity: 1; }
-  .spec-delete:hover { background: rgba(244,63,94,.12); color: #F43F5E; }
-  .spec-delete svg { width: 14px; height: 14px; }
-
-  .spec-vis {
-    width: 24px; height: 24px; border: none; border-radius: 4px;
-    background: none; cursor: pointer; flex-shrink: 0;
-    display: flex; align-items: center; justify-content: center;
-    color: var(--figma-color-text-tertiary); opacity: 0; transition: all 0.15s;
-  }
+  .spec-delete svg, .spec-vis svg { width: 14px; height: 14px; }
+  .spec-item:hover .spec-delete,
   .spec-item:hover .spec-vis { opacity: 1; }
-  .spec-vis:hover { background: var(--figma-color-bg-hover); color: var(--figma-color-text-secondary); }
-  .spec-vis svg { width: 14px; height: 14px; }
+  .spec-delete { margin-right: 2px; }
+  .spec-delete:hover { color: #F43F5E; }
+  .spec-vis { margin-right: 8px; }
+  .spec-vis:hover { color: var(--figma-color-text-secondary); }
   .spec-item.hidden { opacity: 0.45; }
   .spec-item.hidden .spec-vis { opacity: 1; }
   .spec-item.dragging { opacity: 0.4; }
@@ -258,7 +252,7 @@
   }
   .spec-item {
     border-radius: 6px; padding: 7px 8px; margin-bottom: 2px;
-    display: flex; gap: 8px; align-items: center; cursor: pointer; transition: background 0.1s;
+    display: flex; gap: 0; align-items: center; cursor: pointer; transition: background 0.1s;
     user-select: none;
   }
   .spec-item:hover { background: var(--figma-color-bg-hover); }
@@ -269,7 +263,7 @@
     cursor: pointer; transition: filter 0.1s;
   }
   .spec-num:hover { filter: brightness(1.15); }
-  .spec-body { flex: 1; min-width: 0; }
+  .spec-body { flex: 1; min-width: 0; margin-right: 4px; }
   .spec-title-row { display: flex; align-items: center; gap: 6px; }
   .spec-title { font-weight: 500; font-size: 11px; color: var(--figma-color-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .spec-preview { font-size: 10px; color: var(--figma-color-text-tertiary); font-family: 'SF Mono', Consolas, monospace; margin-top: 2px; margin-left: 26px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -389,3 +383,58 @@
   .footer-feedback { opacity: 0.7; }
   .theme-btn { gap: 4px; padding: 0 6px; }
   .theme-btn svg { width: 14px; height: 14px; }
+
+  /* ─── Checkbox in spec items (Figma inspector style) ─── */
+  .spec-check {
+    width: 12px; height: 12px; flex-shrink: 0;
+    cursor: pointer; margin: 0;
+    -webkit-appearance: none; appearance: none;
+    border: 1px solid var(--figma-color-border-strong);
+    border-radius: 2px; background: none;
+    position: relative; transition: all 0.1s;
+    opacity: 0; margin-right: 6px;
+  }
+  .spec-item:hover .spec-check,
+  .spec-check:checked { opacity: 1; }
+  .spec-check:hover { border-color: var(--figma-color-text-secondary); }
+  .spec-check:checked {
+    background: var(--figma-color-bg-brand);
+    border-color: var(--figma-color-bg-brand);
+  }
+  .spec-check:checked::after {
+    content: "";
+    position: absolute; left: 2.5px; top: 0px;
+    width: 3.5px; height: 6px;
+    border: solid #fff; border-width: 0 1.2px 1.2px 0;
+    transform: rotate(40deg);
+  }
+
+  /* ─── Batch action bar ─── */
+  .batch-bar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px;
+    background: var(--figma-color-bg-secondary);
+    border-radius: 6px; margin-bottom: 6px;
+    border: 1px solid var(--figma-color-border);
+  }
+  .batch-bar .batch-count {
+    flex: 1; font-size: 11px; font-weight: 600;
+    color: var(--figma-color-text);
+  }
+  .batch-bar .btn-sm {
+    padding: 4px 10px; font-size: 10px; font-weight: 600;
+    border: none; border-radius: 4px; cursor: pointer;
+  }
+  .batch-bar .btn-sm.btn-danger {
+    background: rgba(244,63,94,.15); color: #F43F5E;
+  }
+  .batch-bar .btn-sm.btn-danger:hover { background: rgba(244,63,94,.25); }
+  .batch-bar .btn-sm.btn-secondary {
+    background: none; color: var(--figma-color-text-secondary);
+  }
+  .batch-bar .btn-sm.btn-secondary:hover { background: var(--figma-color-bg-hover); }
+
+  /* ─── Delete all button ─── */
+  .list-btn-danger:hover { color: #F43F5E; }
+
+  .spec-item.selected { background: rgba(12,140,233,.06); }

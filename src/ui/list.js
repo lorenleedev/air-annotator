@@ -1,3 +1,5 @@
+var selectedNums = new Set();
+
 function showReorderLoading() {
   var t = I18N[currentLang];
   var overlay = document.getElementById("reorderOverlay");
@@ -12,7 +14,7 @@ function renderSpecList(specs) {
   cachedSpecs = specs || [];
   var container = document.getElementById("specList"), empty = document.getElementById("specListEmpty");
   container.innerHTML = "";
-  if (!specs || specs.length === 0) { empty.style.display = "flex"; updateToggleAllBtn(); return; }
+  if (!specs || specs.length === 0) { empty.style.display = "flex"; selectedNums.clear(); updateToggleAllBtn(); updateBatchBar(); return; }
   empty.style.display = "none";
   var dragSrcNum = null;
   for (var i = 0; i < specs.length; i++) {
@@ -37,6 +39,7 @@ function renderSpecList(specs) {
         '<path d="M3 4h10M6 4V3a1 1 0 011-1h2a1 1 0 011 1v1M5 4v8.5a1 1 0 001 1h4a1 1 0 001-1V4"/></svg>' +
       '</button>' +
       '<button class="spec-vis" data-num="' + s.num + '" data-hidden="' + (s.hidden ? '1' : '0') + '" title="' + (s.hidden ? 'Show' : 'Hide') + '">' + eyeIcon + '</button>' +
+      '<input type="checkbox" class="spec-check" data-num="' + escHtml(s.num) + '"' + (selectedNums.has(s.num) ? ' checked' : '') + '>' +
       '<div class="spec-drag">' +
         '<svg width="8" height="14" viewBox="0 0 8 14" fill="currentColor">' +
           '<circle cx="2" cy="2" r="1.2"/><circle cx="6" cy="2" r="1.2"/>' +
@@ -49,6 +52,7 @@ function renderSpecList(specs) {
       item.querySelector(".spec-delete").style.display = "none";
       item.querySelector(".spec-vis").style.display = "none";
       item.querySelector(".spec-drag").style.display = "none";
+      item.querySelector(".spec-check").style.display = "none";
       item.setAttribute("draggable", "false");
     }
     // Number badge click → navigate to target on canvas
@@ -72,6 +76,19 @@ function renderSpecList(specs) {
         deleteFromList(num, targetId);
       };
     })(s.num, s.targetNodeId);
+    // Checkbox click
+    item.querySelector(".spec-check").onclick = (function(num) {
+      return function(e) {
+        e.stopPropagation();
+        if (this.checked) {
+          selectedNums.add(num);
+        } else {
+          selectedNums.delete(num);
+        }
+        updateBatchBar();
+        updateItemSelection();
+      };
+    })(s.num);
     // Item click → Edit tab (선택 이동 없이 데이터만 표시)
     item.onclick = (function(spec) {
       return function() {
@@ -130,7 +147,13 @@ function renderSpecList(specs) {
     })(s.num);
     container.appendChild(item);
   }
+  // Prune stale selections (deleted items still in selectedNums)
+  var currentNums = new Set();
+  for (var i = 0; i < specs.length; i++) currentNums.add(String(specs[i].num));
+  selectedNums.forEach(function(n) { if (!currentNums.has(String(n))) selectedNums.delete(n); });
   updateToggleAllBtn();
+  updateBatchBar();
+  updateItemSelection();
 }
 
 function showSelContent(name, meta, title, desc) {
@@ -214,9 +237,13 @@ function updateToggleAllBtn() {
   var t = I18N[currentLang];
   if (!cachedSpecs || cachedSpecs.length === 0) {
     btn.style.display = "none";
+    var delAll = document.getElementById("btnDeleteAll");
+    if (delAll) delAll.style.display = "none";
     return;
   }
   btn.style.display = "";
+  var delAll = document.getElementById("btnDeleteAll");
+  if (delAll) delAll.style.display = "";
   var allHidden = cachedSpecs.every(function(s) { return s.hidden; });
   if (allHidden) {
     btn.setAttribute("data-tip", t.tip_show_all || "Show all annotations on canvas");
@@ -235,4 +262,48 @@ function insertTag(tag) {
   var newPos = start + prefix.length + tag.length;
   ta.setSelectionRange(newPos, newPos);
   markDirty();
+}
+
+function updateBatchBar() {
+  var bar = document.getElementById("batchBar");
+  var t = I18N[currentLang];
+  if (selectedNums.size > 0) {
+    bar.style.display = "flex";
+    document.getElementById("batchCount").textContent = (t.batch_selected || "{n} selected").replace("{n}", selectedNums.size);
+  } else {
+    bar.style.display = "none";
+  }
+}
+
+function updateItemSelection() {
+  var items = document.querySelectorAll(".spec-item");
+  for (var i = 0; i < items.length; i++) {
+    var num = items[i].dataset.num;
+    items[i].classList.toggle("selected", selectedNums.has(num));
+  }
+}
+
+function clearSelection() {
+  selectedNums.clear();
+  var checks = document.querySelectorAll(".spec-check");
+  for (var i = 0; i < checks.length; i++) checks[i].checked = false;
+  updateBatchBar();
+  updateItemSelection();
+}
+
+function deleteAllSpecs() {
+  if (!cachedSpecs || cachedSpecs.length === 0) return;
+  var t = I18N[currentLang];
+  if (!confirm(t.confirm_delete_all || "Delete ALL annotations on this page? This cannot be undone.")) return;
+  parent.postMessage({ pluginMessage: { type: "delete-all-specs" } }, "*");
+}
+
+function deleteSelectedSpecs() {
+  if (selectedNums.size === 0) return;
+  var t = I18N[currentLang];
+  var msg = (t.confirm_delete_selected || "Delete {n} selected annotation(s)? This cannot be undone.").replace("{n}", selectedNums.size);
+  if (!confirm(msg)) return;
+  var nums = [];
+  selectedNums.forEach(function(n) { nums.push(n); });
+  parent.postMessage({ pluginMessage: { type: "delete-selected-specs", nums: nums } }, "*");
 }

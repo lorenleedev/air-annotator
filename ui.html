@@ -193,25 +193,19 @@
   .btn-danger { background: rgba(244,63,94,.1); color: #F43F5E; }
   .btn-danger:hover { background: rgba(244,63,94,.2); }
 
-  .spec-delete {
-    width: 24px; height: 24px; border: none; border-radius: 4px;
+  .spec-delete, .spec-vis {
+    width: 20px; height: 20px; border: none; border-radius: 4px;
     background: none; cursor: pointer; flex-shrink: 0;
     display: flex; align-items: center; justify-content: center;
     color: var(--figma-color-text-tertiary); opacity: 0; transition: all 0.15s;
   }
-  .spec-item:hover .spec-delete { opacity: 1; }
-  .spec-delete:hover { background: rgba(244,63,94,.12); color: #F43F5E; }
-  .spec-delete svg { width: 14px; height: 14px; }
-
-  .spec-vis {
-    width: 24px; height: 24px; border: none; border-radius: 4px;
-    background: none; cursor: pointer; flex-shrink: 0;
-    display: flex; align-items: center; justify-content: center;
-    color: var(--figma-color-text-tertiary); opacity: 0; transition: all 0.15s;
-  }
+  .spec-delete svg, .spec-vis svg { width: 14px; height: 14px; }
+  .spec-item:hover .spec-delete,
   .spec-item:hover .spec-vis { opacity: 1; }
-  .spec-vis:hover { background: var(--figma-color-bg-hover); color: var(--figma-color-text-secondary); }
-  .spec-vis svg { width: 14px; height: 14px; }
+  .spec-delete { margin-right: 2px; }
+  .spec-delete:hover { color: #F43F5E; }
+  .spec-vis { margin-right: 8px; }
+  .spec-vis:hover { color: var(--figma-color-text-secondary); }
   .spec-item.hidden { opacity: 0.45; }
   .spec-item.hidden .spec-vis { opacity: 1; }
   .spec-item.dragging { opacity: 0.4; }
@@ -261,7 +255,7 @@
   }
   .spec-item {
     border-radius: 6px; padding: 7px 8px; margin-bottom: 2px;
-    display: flex; gap: 8px; align-items: center; cursor: pointer; transition: background 0.1s;
+    display: flex; gap: 0; align-items: center; cursor: pointer; transition: background 0.1s;
     user-select: none;
   }
   .spec-item:hover { background: var(--figma-color-bg-hover); }
@@ -272,7 +266,7 @@
     cursor: pointer; transition: filter 0.1s;
   }
   .spec-num:hover { filter: brightness(1.15); }
-  .spec-body { flex: 1; min-width: 0; }
+  .spec-body { flex: 1; min-width: 0; margin-right: 4px; }
   .spec-title-row { display: flex; align-items: center; gap: 6px; }
   .spec-title { font-weight: 500; font-size: 11px; color: var(--figma-color-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .spec-preview { font-size: 10px; color: var(--figma-color-text-tertiary); font-family: 'SF Mono', Consolas, monospace; margin-top: 2px; margin-left: 26px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -392,6 +386,61 @@
   .footer-feedback { opacity: 0.7; }
   .theme-btn { gap: 4px; padding: 0 6px; }
   .theme-btn svg { width: 14px; height: 14px; }
+
+  /* ─── Checkbox in spec items (Figma inspector style) ─── */
+  .spec-check {
+    width: 12px; height: 12px; flex-shrink: 0;
+    cursor: pointer; margin: 0;
+    -webkit-appearance: none; appearance: none;
+    border: 1px solid var(--figma-color-border-strong);
+    border-radius: 2px; background: none;
+    position: relative; transition: all 0.1s;
+    opacity: 0; margin-right: 6px;
+  }
+  .spec-item:hover .spec-check,
+  .spec-check:checked { opacity: 1; }
+  .spec-check:hover { border-color: var(--figma-color-text-secondary); }
+  .spec-check:checked {
+    background: var(--figma-color-bg-brand);
+    border-color: var(--figma-color-bg-brand);
+  }
+  .spec-check:checked::after {
+    content: "";
+    position: absolute; left: 2.5px; top: 0px;
+    width: 3.5px; height: 6px;
+    border: solid #fff; border-width: 0 1.2px 1.2px 0;
+    transform: rotate(40deg);
+  }
+
+  /* ─── Batch action bar ─── */
+  .batch-bar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px;
+    background: var(--figma-color-bg-secondary);
+    border-radius: 6px; margin-bottom: 6px;
+    border: 1px solid var(--figma-color-border);
+  }
+  .batch-bar .batch-count {
+    flex: 1; font-size: 11px; font-weight: 600;
+    color: var(--figma-color-text);
+  }
+  .batch-bar .btn-sm {
+    padding: 4px 10px; font-size: 10px; font-weight: 600;
+    border: none; border-radius: 4px; cursor: pointer;
+  }
+  .batch-bar .btn-sm.btn-danger {
+    background: rgba(244,63,94,.15); color: #F43F5E;
+  }
+  .batch-bar .btn-sm.btn-danger:hover { background: rgba(244,63,94,.25); }
+  .batch-bar .btn-sm.btn-secondary {
+    background: none; color: var(--figma-color-text-secondary);
+  }
+  .batch-bar .btn-sm.btn-secondary:hover { background: var(--figma-color-bg-hover); }
+
+  /* ─── Delete all button ─── */
+  .list-btn-danger:hover { color: #F43F5E; }
+
+  .spec-item.selected { background: rgba(12,140,233,.06); }
 </style>
 
 <div class="hero-banner">
@@ -652,6 +701,9 @@
   <div class="list-header">
     <div class="section-label" style="margin:0" data-i18n="list_title">All Annotations</div>
     <div class="list-actions">
+      <button class="list-btn list-btn-danger" id="btnDeleteAll" onclick="deleteAllSpecs()" data-tip="Delete all annotations" data-i18n-tip="tip_delete_all">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h10M6 4V3a1 1 0 011-1h2a1 1 0 011 1v1M5 4v8.5a1 1 0 001 1h4a1 1 0 001-1V4"/></svg>
+      </button>
       <button class="list-btn" id="btnToggleAllVis" onclick="toggleAllVisibility()" data-tip="Hide all annotations on canvas" data-i18n-tip="tip_hide_all">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2.5"/></svg>
       </button>
@@ -660,6 +712,11 @@
       <button class="list-btn" onclick="rebuildIndex()" data-tip="Rebuild AI spec index" data-i18n-tip="tip_index">Index</button>
       <button class="list-btn" onclick="refreshList()" data-tip="Refresh list" data-i18n-tip="tip_refresh">↻</button>
     </div>
+  </div>
+  <div id="batchBar" class="batch-bar" style="display:none;">
+    <span class="batch-count" id="batchCount">0 selected</span>
+    <button class="btn-sm btn-danger" onclick="deleteSelectedSpecs()" id="btnDeleteSelected" data-i18n="btn_delete_selected">Delete</button>
+    <button class="btn-sm btn-secondary" onclick="clearSelection()" data-i18n="btn_cancel_select">Cancel</button>
   </div>
   <div style="position:relative;">
     <div id="specList"></div>
@@ -754,7 +811,13 @@ var I18N = {
     tip_hide_all: "Hide all annotations on canvas",
     tip_show_all: "Show all annotations on canvas",
     reorder_done: "Annotations reordered",
-    reorder_loading: "Reordering..."
+    reorder_loading: "Reordering...",
+    confirm_delete_all: "Delete ALL annotations on this page? This cannot be undone.",
+    confirm_delete_selected: "Delete {n} selected annotation(s)? This cannot be undone.",
+    tip_delete_all: "Delete all annotations",
+    batch_selected: "{n} selected",
+    btn_delete_selected: "Delete",
+    btn_cancel_select: "Cancel"
   },
   ko: {
     tab_edit: "편집",
@@ -810,7 +873,13 @@ var I18N = {
     tip_hide_all: "캔버스의 모든 어노테이션 숨기기",
     tip_show_all: "캔버스의 모든 어노테이션 표시",
     reorder_done: "어노테이션 순서 변경됨",
-    reorder_loading: "순서 변경 중..."
+    reorder_loading: "순서 변경 중...",
+    confirm_delete_all: "이 페이지의 모든 어노테이션을 삭제하시겠습니까? 되돌릴 수 없습니다.",
+    confirm_delete_selected: "선택한 {n}개 어노테이션을 삭제하시겠습니까? 되돌릴 수 없습니다.",
+    tip_delete_all: "모든 어노테이션 삭제",
+    batch_selected: "{n}개 선택됨",
+    btn_delete_selected: "삭제",
+    btn_cancel_select: "취소"
   }
 };
 
@@ -1015,6 +1084,11 @@ function applyViewMode() {
   document.querySelectorAll(".list-btn").forEach(function(btn) {
     if (btn.textContent === "Index" || btn.onclick === rebuildIndex) btn.style.display = "none";
   });
+  // Hide delete-all button and batch bar
+  var delAllBtn = document.getElementById("btnDeleteAll");
+  if (delAllBtn) delAllBtn.style.display = "none";
+  var batchBar = document.getElementById("batchBar");
+  if (batchBar) batchBar.style.display = "none";
 }
 
 var cachedSpecs = [];
@@ -1053,6 +1127,8 @@ function exportSpecs(format) {
   setTimeout(function() { toast.style.display = "none"; }, 2000);
 }
 
+var selectedNums = new Set();
+
 function showReorderLoading() {
   var t = I18N[currentLang];
   var overlay = document.getElementById("reorderOverlay");
@@ -1067,7 +1143,7 @@ function renderSpecList(specs) {
   cachedSpecs = specs || [];
   var container = document.getElementById("specList"), empty = document.getElementById("specListEmpty");
   container.innerHTML = "";
-  if (!specs || specs.length === 0) { empty.style.display = "flex"; updateToggleAllBtn(); return; }
+  if (!specs || specs.length === 0) { empty.style.display = "flex"; selectedNums.clear(); updateToggleAllBtn(); updateBatchBar(); return; }
   empty.style.display = "none";
   var dragSrcNum = null;
   for (var i = 0; i < specs.length; i++) {
@@ -1092,6 +1168,7 @@ function renderSpecList(specs) {
         '<path d="M3 4h10M6 4V3a1 1 0 011-1h2a1 1 0 011 1v1M5 4v8.5a1 1 0 001 1h4a1 1 0 001-1V4"/></svg>' +
       '</button>' +
       '<button class="spec-vis" data-num="' + s.num + '" data-hidden="' + (s.hidden ? '1' : '0') + '" title="' + (s.hidden ? 'Show' : 'Hide') + '">' + eyeIcon + '</button>' +
+      '<input type="checkbox" class="spec-check" data-num="' + escHtml(s.num) + '"' + (selectedNums.has(s.num) ? ' checked' : '') + '>' +
       '<div class="spec-drag">' +
         '<svg width="8" height="14" viewBox="0 0 8 14" fill="currentColor">' +
           '<circle cx="2" cy="2" r="1.2"/><circle cx="6" cy="2" r="1.2"/>' +
@@ -1104,6 +1181,7 @@ function renderSpecList(specs) {
       item.querySelector(".spec-delete").style.display = "none";
       item.querySelector(".spec-vis").style.display = "none";
       item.querySelector(".spec-drag").style.display = "none";
+      item.querySelector(".spec-check").style.display = "none";
       item.setAttribute("draggable", "false");
     }
     // Number badge click → navigate to target on canvas
@@ -1127,6 +1205,19 @@ function renderSpecList(specs) {
         deleteFromList(num, targetId);
       };
     })(s.num, s.targetNodeId);
+    // Checkbox click
+    item.querySelector(".spec-check").onclick = (function(num) {
+      return function(e) {
+        e.stopPropagation();
+        if (this.checked) {
+          selectedNums.add(num);
+        } else {
+          selectedNums.delete(num);
+        }
+        updateBatchBar();
+        updateItemSelection();
+      };
+    })(s.num);
     // Item click → Edit tab (선택 이동 없이 데이터만 표시)
     item.onclick = (function(spec) {
       return function() {
@@ -1185,7 +1276,13 @@ function renderSpecList(specs) {
     })(s.num);
     container.appendChild(item);
   }
+  // Prune stale selections (deleted items still in selectedNums)
+  var currentNums = new Set();
+  for (var i = 0; i < specs.length; i++) currentNums.add(String(specs[i].num));
+  selectedNums.forEach(function(n) { if (!currentNums.has(String(n))) selectedNums.delete(n); });
   updateToggleAllBtn();
+  updateBatchBar();
+  updateItemSelection();
 }
 
 function showSelContent(name, meta, title, desc) {
@@ -1269,9 +1366,13 @@ function updateToggleAllBtn() {
   var t = I18N[currentLang];
   if (!cachedSpecs || cachedSpecs.length === 0) {
     btn.style.display = "none";
+    var delAll = document.getElementById("btnDeleteAll");
+    if (delAll) delAll.style.display = "none";
     return;
   }
   btn.style.display = "";
+  var delAll = document.getElementById("btnDeleteAll");
+  if (delAll) delAll.style.display = "";
   var allHidden = cachedSpecs.every(function(s) { return s.hidden; });
   if (allHidden) {
     btn.setAttribute("data-tip", t.tip_show_all || "Show all annotations on canvas");
@@ -1290,6 +1391,50 @@ function insertTag(tag) {
   var newPos = start + prefix.length + tag.length;
   ta.setSelectionRange(newPos, newPos);
   markDirty();
+}
+
+function updateBatchBar() {
+  var bar = document.getElementById("batchBar");
+  var t = I18N[currentLang];
+  if (selectedNums.size > 0) {
+    bar.style.display = "flex";
+    document.getElementById("batchCount").textContent = (t.batch_selected || "{n} selected").replace("{n}", selectedNums.size);
+  } else {
+    bar.style.display = "none";
+  }
+}
+
+function updateItemSelection() {
+  var items = document.querySelectorAll(".spec-item");
+  for (var i = 0; i < items.length; i++) {
+    var num = items[i].dataset.num;
+    items[i].classList.toggle("selected", selectedNums.has(num));
+  }
+}
+
+function clearSelection() {
+  selectedNums.clear();
+  var checks = document.querySelectorAll(".spec-check");
+  for (var i = 0; i < checks.length; i++) checks[i].checked = false;
+  updateBatchBar();
+  updateItemSelection();
+}
+
+function deleteAllSpecs() {
+  if (!cachedSpecs || cachedSpecs.length === 0) return;
+  var t = I18N[currentLang];
+  if (!confirm(t.confirm_delete_all || "Delete ALL annotations on this page? This cannot be undone.")) return;
+  parent.postMessage({ pluginMessage: { type: "delete-all-specs" } }, "*");
+}
+
+function deleteSelectedSpecs() {
+  if (selectedNums.size === 0) return;
+  var t = I18N[currentLang];
+  var msg = (t.confirm_delete_selected || "Delete {n} selected annotation(s)? This cannot be undone.").replace("{n}", selectedNums.size);
+  if (!confirm(msg)) return;
+  var nums = [];
+  selectedNums.forEach(function(n) { nums.push(n); });
+  parent.postMessage({ pluginMessage: { type: "delete-selected-specs", nums: nums } }, "*");
 }
 
 // ──────────────────────────────────────
@@ -1361,6 +1506,24 @@ window.onmessage = function(e) {
   }
   if (msg.type === "batch-done") parent.postMessage({ pluginMessage: { type: "list-specs" } }, "*");
   if (msg.type === "delete-done") {
+    clearDesc();
+    currentNodeId = null;
+    document.getElementById("selEmpty").style.display = "flex";
+    document.getElementById("selContent").style.display = "none";
+    updateDeleteBtn(false);
+    parent.postMessage({ pluginMessage: { type: "list-specs" } }, "*");
+  }
+  if (msg.type === "delete-all-done") {
+    clearDesc();
+    currentNodeId = null;
+    document.getElementById("selEmpty").style.display = "flex";
+    document.getElementById("selContent").style.display = "none";
+    updateDeleteBtn(false);
+    selectedNums.clear();
+    parent.postMessage({ pluginMessage: { type: "list-specs" } }, "*");
+  }
+  if (msg.type === "delete-selected-done") {
+    selectedNums.clear();
     clearDesc();
     currentNodeId = null;
     document.getElementById("selEmpty").style.display = "flex";

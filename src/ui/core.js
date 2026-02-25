@@ -124,4 +124,9 @@ function applyViewMode() {
   document.querySelectorAll(".list-btn").forEach(function(btn) {
     if (btn.textContent === "Index" || btn.onclick === rebuildIndex) btn.style.display = "none";
   });
+  // Hide delete-all button and batch bar
+  var delAllBtn = document.getElementById("btnDeleteAll");
+  if (delAllBtn) delAllBtn.style.display = "none";
+  var batchBar = document.getElementById("batchBar");
+  if (batchBar) batchBar.style.display = "none";
 }

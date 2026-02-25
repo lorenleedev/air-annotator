@@ -7,10 +7,10 @@
  * 테스트 범위:
  *   1. 유틸리티 함수 (parseTags, makeSummary, hexToRgb, stripPrefix)
  *   2. 테마 시스템 (getTheme, THEMES)
- *   3. 번호 관리 (getNextNum) + 마이그레이션 호환
+ *   3. 번호 관리 (getNextNum)
  *   4. 데이터 노드 (createHiddenDataNode, readHiddenData)
  *   5. 패널 생성 (createSpecPanel 구조 검증)
- *   6. 산출물 제거 (removeExistingArtifacts) + 마이그레이션 호환
+ *   6. 산출물 제거 (removeExistingArtifacts)
  *   7. 레이어 스캔 필터링 (scanLayers)
  *   8. 쓰기 흐름 (writeSpec)
  *   9. 온보딩/UI 텍스트 일관성
@@ -204,7 +204,6 @@ function getNextNum() {
     for (var i = 0; i < nodes.length; i++) {
       var m = nodes[i].name.match(/^\[AIR-(\d+)\]/);
       if (!m) m = nodes[i].name.match(/^📋 Annotation: (\d+)/);
-      if (!m) m = nodes[i].name.match(/^📋 Spec: (\d+)/);
       if (m) { var n = parseInt(m[1]); if (n > max) max = n; }
       if ("children" in nodes[i] && nodes[i].type !== "INSTANCE") {
         try { check(nodes[i].children); } catch(e) {}
@@ -217,13 +216,11 @@ function getNextNum() {
 
 function removeExistingArtifacts(num) {
   var panelName = "📋 Annotation: " + num;
-  var oldPanelName = "📋 Spec: " + num;
   var markerName = "🏷️ " + num;
-  var dataName = "__specData_" + num + "__";
   var children = figma.currentPage.children;
   for (var i = children.length - 1; i >= 0; i--) {
     var n = children[i].name;
-    if (n === panelName || n === oldPanelName || n === markerName || n === dataName) children[i].remove();
+    if (n === panelName || n === markerName) children[i].remove();
   }
 }
 
@@ -258,9 +255,7 @@ function scanLayers(node, depth) {
   for (var i = 0; i < node.children.length; i++) {
     var child = node.children[i];
     if (child.name.indexOf("📋 Annotation:") === 0) continue;
-    if (child.name.indexOf("📋 Spec:") === 0) continue;
     if (child.name.indexOf("🏷️") === 0) continue;
-    if (child.name.indexOf("__specData_") === 0) continue;
     if (child.type === "PAGE" || child.type === "DOCUMENT") continue;
     results.push({ id: child.id, name: child.name, type: child.type, depth: depth });
     if ("children" in child && child.type !== "INSTANCE") {
@@ -435,9 +430,9 @@ suite("테마 시스템");
 })();
 
 // ══════════════════════════════════════
-// 6. getNextNum + 마이그레이션
+// 6. getNextNum
 // ══════════════════════════════════════
-suite("getNextNum + 마이그레이션");
+suite("getNextNum");
 
 (function() {
   resetMock();
@@ -453,16 +448,10 @@ suite("getNextNum + 마이그레이션");
   _currentPage.children.push(n2);
   assert("📋 Annotation: 5 → 6", getNextNum() === 6);
 
-  // 마이그레이션: 옛 이름
-  resetMock();
-  var n3 = mockNode({ name: "📋 Spec: 10" });
-  _currentPage.children.push(n3);
-  assert("📋 Spec: 10 (옛 이름) → 11", getNextNum() === 11);
-
   // 혼합
   resetMock();
   _currentPage.children.push(mockNode({ name: "[AIR-2] Frame" }));
-  _currentPage.children.push(mockNode({ name: "📋 Spec: 7" }));
+  _currentPage.children.push(mockNode({ name: "[AIR-7] SomeLayer" }));
   _currentPage.children.push(mockNode({ name: "📋 Annotation: 5" }));
   assert("혼합: max(2,7,5) → 8", getNextNum() === 8);
 
@@ -483,30 +472,21 @@ suite("getNextNum + 마이그레이션");
 })();
 
 // ══════════════════════════════════════
-// 7. removeExistingArtifacts + 마이그레이션
+// 7. removeExistingArtifacts
 // ══════════════════════════════════════
-suite("removeExistingArtifacts + 마이그레이션");
+suite("removeExistingArtifacts");
 
 (function() {
-  // 새 이름 패널 제거
+  // 패널 + 마커 제거
   resetMock();
   var panel = mockNode({ name: "📋 Annotation: 3" });
   var marker = mockNode({ name: "🏷️ 3" });
-  var data = mockNode({ name: "__specData_3__" });
   var unrelated = mockNode({ name: "Normal Frame" });
-  _currentPage.children.push(panel, marker, data, unrelated);
-  assert("제거 전 4개", _currentPage.children.length === 4);
+  _currentPage.children.push(panel, marker, unrelated);
+  assert("제거 전 3개", _currentPage.children.length === 3);
   removeExistingArtifacts("3");
   assert("제거 후 1개 (unrelated만)", _currentPage.children.length === 1);
   assert("남은 것은 Normal Frame", _currentPage.children[0].name === "Normal Frame");
-
-  // 옛 이름 패널 제거 (마이그레이션)
-  resetMock();
-  var oldPanel = mockNode({ name: "📋 Spec: 5" });
-  var marker5 = mockNode({ name: "🏷️ 5" });
-  _currentPage.children.push(oldPanel, marker5);
-  removeExistingArtifacts("5");
-  assert("옛 이름 📋 Spec: 도 제거", _currentPage.children.length === 0);
 
   // 다른 번호 건드리지 않음
   resetMock();
@@ -565,9 +545,7 @@ suite("scanLayers 필터링");
   resetMock();
   var root = { children: [] };
   root.children.push(mockNode({ name: "📋 Annotation: 1", type: "FRAME" }));
-  root.children.push(mockNode({ name: "📋 Spec: 2", type: "FRAME" }));
   root.children.push(mockNode({ name: "🏷️ 1", type: "FRAME" }));
-  root.children.push(mockNode({ name: "__specData_1__", type: "TEXT" }));
   root.children.push(mockNode({ name: "Button", type: "FRAME" }));
   root.children.push(mockNode({ name: "Header", type: "FRAME" }));
 
@@ -575,9 +553,6 @@ suite("scanLayers 필터링");
   assert("AIR 산출물 필터링 → 2개만", result.length === 2);
   assert("Button 포함", result.some(function(r) { return r.name === "Button"; }));
   assert("Header 포함", result.some(function(r) { return r.name === "Header"; }));
-
-  // 옛 이름도 필터링
-  assert("📋 Spec: (옛 이름) 필터링", !result.some(function(r) { return r.name.indexOf("Spec:") >= 0; }));
 
   // 깊이 제한
   var d0 = { name: "d0", type: "FRAME", children: [] };
@@ -643,45 +618,6 @@ suite("UI 텍스트 일관성");
 })();
 
 // ══════════════════════════════════════
-// 11. 마이그레이션 호환 통합 검증
-// ══════════════════════════════════════
-suite("마이그레이션 호환 통합");
-
-(function() {
-  var fs = require("fs");
-  var code = fs.readFileSync(__dirname + "/code.js", "utf8");
-
-  // 모든 "📋 Annotation:" 참조 위치에서 "📋 Spec:" 도 처리하는지
-  var annotationOnly = [];
-  var lines = code.split("\n");
-  for (var i = 0; i < lines.length; i++) {
-    var line = lines[i];
-    // 패널 생성 (alFrame)은 새 이름만 사용 — 정상
-    if (line.indexOf('alFrame("📋 Annotation:') >= 0) continue;
-    // 문자열 비교/검색에서 Annotation만 있고 Spec 호환이 없는 경우 찾기
-    if (line.indexOf('"📋 Annotation:') >= 0 || line.indexOf("'📋 Annotation:") >= 0) {
-      // 같은 블록(±5줄)에 Spec: 참조가 있는지 확인
-      var nearby = lines.slice(Math.max(0, i-5), Math.min(lines.length, i+6)).join("\n");
-      if (nearby.indexOf("Spec:") === -1 && nearby.indexOf("oldPanelName") === -1) {
-        annotationOnly.push(i + 1);
-      }
-    }
-  }
-  assert("모든 패널 참조에 마이그레이션 호환 있음 (누락: [" + annotationOnly.join(",") + "])", annotationOnly.length === 0);
-
-  // rebuild-all-panels 에서 break 없이 모두 제거
-  var rebuildSection = code.substring(
-    code.indexOf("rebuild-all-panels"),
-    code.indexOf("rebuild-done")
-  );
-  var removalLoop = rebuildSection.substring(
-    rebuildSection.indexOf("Remove old panel"),
-    rebuildSection.indexOf("Create new panel")
-  );
-  assert("rebuild 제거 루프에 break 없음 (여러 개 제거 가능)", removalLoop.indexOf("break") === -1);
-})();
-
-// ══════════════════════════════════════
 // 12. code.js 문법 검증
 // ══════════════════════════════════════
 suite("code.js 문법 검증");
@@ -715,10 +651,14 @@ suite("code.js 문법 검증");
   assert("figma.showUI 호출 존재", code.indexOf("figma.showUI") >= 0);
 
   // 메시지 핸들러 존재
-  var requiredHandlers = ["init", "write-desc", "delete-spec", "list-specs", "rebuild-all-panels", "rebuild-index", "select-node", "apply-batch", "scan-layers", "toggle-visibility", "set-all-visibility", "reorder-specs"];
+  var requiredHandlers = ["init", "write-desc", "delete-spec", "delete-all-specs", "delete-selected-specs", "list-specs", "rebuild-all-panels", "rebuild-index", "select-node", "apply-batch", "scan-layers", "toggle-visibility", "set-all-visibility", "reorder-specs"];
   requiredHandlers.forEach(function(h) {
     assert('메시지 핸들러 "' + h + '" 존재', code.indexOf('"' + h + '"') >= 0);
   });
+
+  assert("parseIndexText 함수 존재", code.indexOf("parseIndexText") >= 0);
+  assert("readIndexMap 함수 존재", code.indexOf("readIndexMap") >= 0);
+  assert("createHiddenDataNode 삭제됨", code.indexOf("createHiddenDataNode") === -1);
 })();
 
 // ══════════════════════════════════════
@@ -959,6 +899,89 @@ suite("code.js 인라인 서식 문자열 검증");
   assert("FONT_BI 변수 존재", code.indexOf("FONT_BI") >= 0);
   assert("txtFormatted 함수 존재", code.indexOf("txtFormatted") >= 0);
   assert("linkText 테마 속성 존재", code.indexOf("linkText") >= 0);
+  assert("parseIndexText 함수 존재 (code.js)", code.indexOf("parseIndexText") >= 0);
+  assert("readIndexMap 함수 존재 (code.js)", code.indexOf("readIndexMap") >= 0);
+})();
+
+// ══════════════════════════════════════
+// 17. parseIndexText
+// ══════════════════════════════════════
+suite("parseIndexText");
+
+// Copy of parseIndexText for testing (matches src/code.ts logic)
+function parseIndexText(content) {
+  var map = new Map();
+  if (!content) return map;
+  var blocks = content.split(/\n---\n/);
+  for (var bi = 0; bi < blocks.length; bi++) {
+    var block = blocks[bi].trim();
+    var headerMatch = block.match(/\[AIRA:(\d+)\]/);
+    if (!headerMatch) continue;
+    var num = headerMatch[1];
+    var lineStart = block.indexOf("[AIRA:" + num + "]");
+    var afterHeader = block.substring(lineStart);
+    var lines = afterHeader.split("\n");
+    var title = "", color = "", target = "";
+    var pastSep = false;
+    var descLines = [];
+    for (var li = 1; li < lines.length; li++) {
+      var ln = lines[li];
+      if (ln === "===") { pastSep = true; continue; }
+      if (pastSep) { descLines.push(ln); continue; }
+      if (ln.indexOf("title: ") === 0) { title = ln.substring(7); }
+      else if (ln.indexOf("color: ") === 0) { color = ln.substring(7); }
+      else if (ln.indexOf("target: ") === 0) { target = ln.substring(8); }
+    }
+    var desc = descLines.join("\n");
+    map.set(num, { title: title, desc: desc, color: color, target: target });
+  }
+  return map;
+}
+
+(function() {
+  // Single entry
+  var content1 = "📑 AI-READABLE ANNOTATOR INDEX\n════════════════════════════════\n\n[AIRA:1]\ntitle: Login Button\ncolor: #FF0000\ntarget: 0:123\n===\n[route] /login\n[auth] public\n\n════════════════════════════════\n총 1개 스펙 | AIR v1";
+  var r1 = parseIndexText(content1);
+  assert("단일 엔트리 파싱", r1.size === 1);
+  assert("단일 엔트리 title", r1.get("1").title === "Login Button");
+  assert("단일 엔트리 color", r1.get("1").color === "#FF0000");
+  assert("단일 엔트리 target", r1.get("1").target === "0:123");
+  assert("단일 엔트리 desc", r1.get("1").desc.indexOf("[route] /login") >= 0 && r1.get("1").desc.indexOf("[auth] public") >= 0);
+
+  // Multiple entries
+  var content2 = "📑 AI-READABLE ANNOTATOR INDEX\n════════════════════════════════\n\n[AIRA:1]\ntitle: Login\ncolor: #FF0000\ntarget: 0:123\n===\n[route] /login\n\n---\n\n[AIRA:2]\ntitle: Dashboard\ncolor: #1E88E5\ntarget: 0:456\n===\n메인 대시보드\n\n════════════════════════════════\n총 2개 스펙 | AIR v1";
+  var r2 = parseIndexText(content2);
+  assert("복수 엔트리 파싱", r2.size === 2);
+  assert("복수 엔트리 1번 title", r2.get("1").title === "Login");
+  assert("복수 엔트리 2번 title", r2.get("2").title === "Dashboard");
+  assert("복수 엔트리 2번 desc", r2.get("2").desc.indexOf("메인 대시보드") >= 0);
+
+  // HIDDEN marker
+  var content3 = "[AIRA:5]  [HIDDEN]\ntitle: Hidden Spec\ncolor: \ntarget: 0:789\n===\n숨겨진 스펙";
+  var r3 = parseIndexText(content3);
+  assert("[HIDDEN] 마커 있어도 파싱", r3.size === 1 && r3.get("5").title === "Hidden Spec");
+
+  // Empty content
+  var r4 = parseIndexText("");
+  assert("빈 문자열 → 빈 Map", r4.size === 0);
+
+  var r5 = parseIndexText(null);
+  assert("null → 빈 Map", r5.size === 0);
+
+  // No AIRA blocks (just header/footer)
+  var content6 = "📑 AI-READABLE ANNOTATOR INDEX\n════════════════════════════════\n\n════════════════════════════════\n총 0개 스펙 | AIR v1";
+  var r6 = parseIndexText(content6);
+  assert("[AIRA] 블록 없으면 빈 Map", r6.size === 0);
+
+  // Empty desc
+  var content7 = "[AIRA:3]\ntitle: No Desc\ncolor: #000\ntarget: 0:111\n===\n";
+  var r7 = parseIndexText(content7);
+  assert("빈 desc 처리", r7.size === 1 && r7.get("3").desc === "");
+
+  // Empty title/color
+  var content8 = "[AIRA:4]\ntitle: \ncolor: \ntarget: 0:222\n===\nsome desc";
+  var r8 = parseIndexText(content8);
+  assert("빈 title/color 처리", r8.size === 1 && r8.get("4").title === "" && r8.get("4").color === "");
 })();
 
 // ══════════════════════════════════════

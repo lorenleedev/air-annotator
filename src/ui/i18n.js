@@ -56,7 +56,13 @@ var I18N = {
     tip_hide_all: "Hide all annotations on canvas",
     tip_show_all: "Show all annotations on canvas",
     reorder_done: "Annotations reordered",
-    reorder_loading: "Reordering..."
+    reorder_loading: "Reordering...",
+    confirm_delete_all: "Delete ALL annotations on this page? This cannot be undone.",
+    confirm_delete_selected: "Delete {n} selected annotation(s)? This cannot be undone.",
+    tip_delete_all: "Delete all annotations",
+    batch_selected: "{n} selected",
+    btn_delete_selected: "Delete",
+    btn_cancel_select: "Cancel"
   },
   ko: {
     tab_edit: "편집",
@@ -112,6 +118,12 @@ var I18N = {
     tip_hide_all: "캔버스의 모든 어노테이션 숨기기",
     tip_show_all: "캔버스의 모든 어노테이션 표시",
     reorder_done: "어노테이션 순서 변경됨",
-    reorder_loading: "순서 변경 중..."
+    reorder_loading: "순서 변경 중...",
+    confirm_delete_all: "이 페이지의 모든 어노테이션을 삭제하시겠습니까? 되돌릴 수 없습니다.",
+    confirm_delete_selected: "선택한 {n}개 어노테이션을 삭제하시겠습니까? 되돌릴 수 없습니다.",
+    tip_delete_all: "모든 어노테이션 삭제",
+    batch_selected: "{n}개 선택됨",
+    btn_delete_selected: "삭제",
+    btn_cancel_select: "취소"
   }
 };

@@ -39,6 +39,24 @@ window.onmessage = function(e) {
     updateDeleteBtn(false);
     parent.postMessage({ pluginMessage: { type: "list-specs" } }, "*");
   }
+  if (msg.type === "delete-all-done") {
+    clearDesc();
+    currentNodeId = null;
+    document.getElementById("selEmpty").style.display = "flex";
+    document.getElementById("selContent").style.display = "none";
+    updateDeleteBtn(false);
+    selectedNums.clear();
+    parent.postMessage({ pluginMessage: { type: "list-specs" } }, "*");
+  }
+  if (msg.type === "delete-selected-done") {
+    selectedNums.clear();
+    clearDesc();
+    currentNodeId = null;
+    document.getElementById("selEmpty").style.display = "flex";
+    document.getElementById("selContent").style.display = "none";
+    updateDeleteBtn(false);
+    parent.postMessage({ pluginMessage: { type: "list-specs" } }, "*");
+  }
   if (msg.type === "rebuild-done") {
     parent.postMessage({ pluginMessage: { type: "list-specs" } }, "*");
   }

@@ -256,6 +256,9 @@
   <div class="list-header">
     <div class="section-label" style="margin:0" data-i18n="list_title">All Annotations</div>
     <div class="list-actions">
+      <button class="list-btn list-btn-danger" id="btnDeleteAll" onclick="deleteAllSpecs()" data-tip="Delete all annotations" data-i18n-tip="tip_delete_all">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h10M6 4V3a1 1 0 011-1h2a1 1 0 011 1v1M5 4v8.5a1 1 0 001 1h4a1 1 0 001-1V4"/></svg>
+      </button>
       <button class="list-btn" id="btnToggleAllVis" onclick="toggleAllVisibility()" data-tip="Hide all annotations on canvas" data-i18n-tip="tip_hide_all">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2.5"/></svg>
       </button>
@@ -264,6 +267,11 @@
       <button class="list-btn" onclick="rebuildIndex()" data-tip="Rebuild AI spec index" data-i18n-tip="tip_index">Index</button>
       <button class="list-btn" onclick="refreshList()" data-tip="Refresh list" data-i18n-tip="tip_refresh">↻</button>
     </div>
+  </div>
+  <div id="batchBar" class="batch-bar" style="display:none;">
+    <span class="batch-count" id="batchCount">0 selected</span>
+    <button class="btn-sm btn-danger" onclick="deleteSelectedSpecs()" id="btnDeleteSelected" data-i18n="btn_delete_selected">Delete</button>
+    <button class="btn-sm btn-secondary" onclick="clearSelection()" data-i18n="btn_cancel_select">Cancel</button>
   </div>
   <div style="position:relative;">
     <div id="specList"></div>
