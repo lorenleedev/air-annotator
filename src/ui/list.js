@@ -139,10 +139,10 @@ function renderSpecList(specs) {
         var order = [];
         for (var j = 0; j < items.length; j++) order.push(items[j].dataset.num);
         var fromIdx = order.indexOf(srcNum);
-        if (fromIdx === -1) return;
-        order.splice(fromIdx, 1);
         var toIdx = order.indexOf(dstNum);
-        if (toIdx === -1) return;
+        if (fromIdx === -1 || toIdx === -1) return;
+        order.splice(fromIdx, 1);
+        // 제거 전 원래 위치(toIdx) 사용: 아래로 이동 시 자동으로 대상 뒤에 삽입됨
         order.splice(toIdx, 0, srcNum);
         showReorderLoading();
         parent.postMessage({ pluginMessage: { type: "reorder-specs", order: order } }, "*");
