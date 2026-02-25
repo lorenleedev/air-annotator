@@ -964,6 +964,7 @@ function escHtml(s) {
 }
 
 var currentNodeId = null;
+var currentNodeNum = null;
 var selectedColor = "#F24E1E";
 var canEdit = true;
 var COLORS = ["#F24E1E", "#FF7262", "#A259FF", "#1ABCFE", "#0ACF83", "#0D0D0D"];
@@ -1100,7 +1101,7 @@ function exportSpecs(format) {
     var jsonData = {
       figmaLink: figmaLink,
       exportedAt: new Date().toISOString(),
-      annotations: cachedSpecs.map(function(s) { return { num: parseInt(s.num), title: s.title || "", color: s.color || "", targetNodeId: s.targetNodeId || "", tags: s.desc || "" }; })
+      annotations: cachedSpecs.map(function(s) { return { num: parseInt(s.num), title: s.title || "", color: s.color || "", targetNodeId: s.targetNodeId || "", tags: s.desc || "", hidden: s.hidden || false }; })
     };
     output = JSON.stringify(jsonData, null, 2); filename += ".json"; mime = "application/json";
   }
@@ -1109,7 +1110,7 @@ function exportSpecs(format) {
     if (figmaLink) output += "> Figma: " + figmaLink + "\n\n";
     for (var i = 0; i < cachedSpecs.length; i++) {
       var s = cachedSpecs[i];
-      output += "## [AIR-" + s.num + "] " + (s.title || "(untitled)") + "\n\n";
+      output += "## [AIR-" + s.num + "] " + (s.title || "(untitled)") + (s.hidden ? " [HIDDEN]" : "") + "\n\n";
       if (s.desc) { s.desc.split("\n").forEach(function(l) { l = l.trim(); if (l) output += "- " + l + "\n"; }); }
       output += "\n---\n\n";
     }
@@ -1220,8 +1221,10 @@ function renderSpecList(specs) {
     item.onclick = (function(spec) {
       return function() {
         var name = "[AIR-" + spec.num + "] " + (spec.title || "");
-        showSelContent(name, spec.targetNodeId || "", spec.title || "", spec.desc || "");
+        var meta = (spec.nodeType || "Node") + "\u200a\u00b7\u200a" + (spec.targetNodeId || "");
+        showSelContent(name, meta, spec.title || "", spec.desc || "");
         currentNodeId = spec.targetNodeId || null;
+        currentNodeNum = spec.num || null;
         if (spec.color) { selectedColor = spec.color; pickColor(spec.color); }
         document.getElementById("nodeBadge").style.background = spec.color || selectedColor || "#F24E1E";
         switchTab("sel");
@@ -1336,7 +1339,7 @@ function deleteDesc() {
   if (!currentNodeId) return;
   var t = I18N[currentLang];
   if (!confirm(t.confirm_delete || "Delete this annotation?")) return;
-  parent.postMessage({ pluginMessage: { type: "delete-spec", nodeId: currentNodeId } }, "*");
+  parent.postMessage({ pluginMessage: { type: "delete-spec", nodeId: currentNodeId, num: currentNodeNum || undefined } }, "*");
 }
 
 function updateDeleteBtn(hasAnnotation) {
@@ -1490,6 +1493,7 @@ window.onmessage = function(e) {
   if (msg.type === "selection-desc") {
     showSelContent(msg.nodeName, msg.nodeType + "\u200a\u00b7\u200a" + msg.nodeId, msg.title, msg.desc);
     currentNodeId = msg.nodeId;
+    currentNodeNum = msg.num || null;
     if (msg.color) { selectedColor = msg.color; pickColor(msg.color); }
     document.getElementById("nodeBadge").style.background = msg.color || selectedColor || "#F24E1E";
     markClean();

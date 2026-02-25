@@ -11,7 +11,7 @@ function exportSpecs(format) {
     var jsonData = {
       figmaLink: figmaLink,
       exportedAt: new Date().toISOString(),
-      annotations: cachedSpecs.map(function(s) { return { num: parseInt(s.num), title: s.title || "", color: s.color || "", targetNodeId: s.targetNodeId || "", tags: s.desc || "" }; })
+      annotations: cachedSpecs.map(function(s) { return { num: parseInt(s.num), title: s.title || "", color: s.color || "", targetNodeId: s.targetNodeId || "", tags: s.desc || "", hidden: s.hidden || false }; })
     };
     output = JSON.stringify(jsonData, null, 2); filename += ".json"; mime = "application/json";
   }
@@ -20,7 +20,7 @@ function exportSpecs(format) {
     if (figmaLink) output += "> Figma: " + figmaLink + "\n\n";
     for (var i = 0; i < cachedSpecs.length; i++) {
       var s = cachedSpecs[i];
-      output += "## [AIR-" + s.num + "] " + (s.title || "(untitled)") + "\n\n";
+      output += "## [AIR-" + s.num + "] " + (s.title || "(untitled)") + (s.hidden ? " [HIDDEN]" : "") + "\n\n";
       if (s.desc) { s.desc.split("\n").forEach(function(l) { l = l.trim(); if (l) output += "- " + l + "\n"; }); }
       output += "\n---\n\n";
     }

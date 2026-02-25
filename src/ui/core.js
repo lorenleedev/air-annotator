@@ -7,6 +7,7 @@ function escHtml(s) {
 }
 
 var currentNodeId = null;
+var currentNodeNum = null;
 var selectedColor = "#F24E1E";
 var canEdit = true;
 var COLORS = ["#F24E1E", "#FF7262", "#A259FF", "#1ABCFE", "#0ACF83", "#0D0D0D"];

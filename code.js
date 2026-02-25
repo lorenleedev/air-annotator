@@ -575,7 +575,7 @@
     const map = /* @__PURE__ */ new Map();
     if (!content) return map;
     if (/\[AIRA:\d+\]/.test(content)) {
-      const blocks = content.split(/\n(?=\[AIRA:\d+\])/);
+      const blocks = content.split(/\n\*---\*\n/);
       for (let bi = 0; bi < blocks.length; bi++) {
         const block = blocks[bi].trim();
         const headerMatch = block.match(/\[AIRA:(\d+)\]/);
@@ -606,7 +606,7 @@
             target = ln.substring(8);
           }
         }
-        while (descLines.length > 0 && (descLines[descLines.length - 1] === "" || descLines[descLines.length - 1] === "*---*")) descLines.pop();
+        while (descLines.length > 0 && descLines[descLines.length - 1] === "") descLines.pop();
         const desc = descLines.join("\n");
         map.set(num, { title, desc, color, target });
       }
@@ -728,7 +728,6 @@
                 existingTxt = idxFrame.children[ti];
                 const indexContent = existingTxt.characters || "";
                 indexMap = parseIndexText(indexContent);
-                existingTxt.characters = "";
                 break;
               }
             }
@@ -1030,7 +1029,8 @@
           nodeType: pTargetType || node.type,
           title: pTitle,
           desc: pDesc,
-          color: pColor
+          color: pColor,
+          num: pNum
         });
         return;
       }
@@ -1070,7 +1070,8 @@
         nodeType: node.type,
         title,
         desc,
-        color
+        color,
+        num: num || ""
       });
     });
   }
@@ -1322,11 +1323,7 @@
         const children = figma.currentPage.children;
         const allSpecs = [];
         const foundNums = {};
-        const rebuildHiddenMap = buildHiddenDataMap();
-        rebuildHiddenMap.forEach(function(rdata, rnum) {
-          allSpecs.push({ num: rnum, data: rdata });
-          foundNums[rnum] = true;
-        });
+        const rebuildIndexMap = buildHiddenDataMap();
         for (let rk = 0; rk < children.length; rk++) {
           const rck = children[rk];
           const rpMatch = rck.name.match(/^📋 Annotation: (\d+)/);
@@ -1341,19 +1338,16 @@
           } catch (e) {
           }
           if (rpTarget) {
-            let rpTitle = "";
-            try {
-              const rpNode = yield figma.getNodeByIdAsync(rpTarget);
-              if (rpNode) {
-                const rptm = rpNode.name.match(/^\[AIR-\d+\]\s*(.*?)(\s*\|.*)?$/);
-                rpTitle = rptm ? rptm[1] : rpNode.name;
-              }
-            } catch (e) {
-            }
-            allSpecs.push({ num: rpnum, data: { title: rpTitle, desc: rpDesc, color: rpColor, target: rpTarget } });
+            const idxData = rebuildIndexMap.get(rpnum);
+            allSpecs.push({ num: rpnum, data: { title: idxData ? idxData.title : "", desc: rpDesc, color: rpColor, target: rpTarget } });
             foundNums[rpnum] = true;
           }
         }
+        rebuildIndexMap.forEach(function(rdata, rnum) {
+          if (foundNums[rnum]) return;
+          allSpecs.push({ num: rnum, data: rdata });
+          foundNums[rnum] = true;
+        });
         const rebuildTargetIds = [];
         for (let si = 0; si < allSpecs.length; si++) {
           rebuildTargetIds.push(allSpecs[si].data.target || "");
@@ -1445,11 +1439,13 @@
             color: data.color,
             desc: data.desc,
             targetNodeId: targetId,
+            nodeType: "",
             preview: data.desc ? data.desc.split("\n").slice(0, 2).join(" ") : "",
             hidden: listHiddenNums.has(parseInt(num))
           });
           foundNums[num] = true;
         });
+        const listFallbacks = [];
         for (let k = 0; k < children.length; k++) {
           const ck = children[k];
           const panelMatch = ck.name.match(/^📋 Annotation: (\d+)/);
@@ -1463,27 +1459,34 @@
             pTargetId = ck.getPluginData("targetNodeId") || "";
           } catch (e) {
           }
-          let pTitle = "";
           if (pTargetId) {
-            try {
-              const tNode = yield figma.getNodeByIdAsync(pTargetId);
-              if (tNode) {
-                const tm = tNode.name.match(/^\[AIR-\d+\]\s*(.*?)(\s*\|.*)?$/);
-                pTitle = tm ? tm[1] : tNode.name;
-              }
-            } catch (e) {
-            }
+            listFallbacks.push({ pnum, pDesc, pColor, pTargetId });
+            foundNums[pnum] = true;
+          }
+        }
+        const listFbPromises = [];
+        for (let fi = 0; fi < listFallbacks.length; fi++) {
+          listFbPromises.push(figma.getNodeByIdAsync(listFallbacks[fi].pTargetId));
+        }
+        const listFbNodes = yield Promise.all(listFbPromises);
+        for (let fi = 0; fi < listFallbacks.length; fi++) {
+          const fb = listFallbacks[fi];
+          const tNode = listFbNodes[fi];
+          let pTitle = "";
+          if (tNode) {
+            const tm = tNode.name.match(/^\[AIR-\d+\]\s*(.*?)(\s*\|.*)?$/);
+            pTitle = tm ? tm[1] : tNode.name;
           }
           specs.push({
-            num: pnum,
+            num: fb.pnum,
             title: pTitle,
-            color: pColor,
-            desc: pDesc,
-            targetNodeId: pTargetId,
-            preview: pDesc ? pDesc.split("\n").slice(0, 2).join(" ") : "",
-            hidden: listHiddenNums.has(parseInt(pnum))
+            color: fb.pColor,
+            desc: fb.pDesc,
+            targetNodeId: fb.pTargetId,
+            nodeType: tNode ? tNode.type : "",
+            preview: fb.pDesc ? fb.pDesc.split("\n").slice(0, 2).join(" ") : "",
+            hidden: listHiddenNums.has(parseInt(fb.pnum))
           });
-          foundNums[pnum] = true;
         }
         specs.sort(function(a, b) {
           return parseInt(a.num) - parseInt(b.num);
@@ -1512,7 +1515,8 @@
           _readingSelection = true;
           figma.currentPage.selection = [node];
           _readingSelection = false;
-          yield updateSpecIndex();
+          const descEmpty = !msg.desc || !msg.desc.trim();
+          yield updateSpecIndex(descEmpty ? /* @__PURE__ */ new Set([existingNum]) : void 0);
           readSelectedDesc();
         } else {
           figma.notify("❌ " + result.error, { error: true });

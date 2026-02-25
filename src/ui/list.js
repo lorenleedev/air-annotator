@@ -94,8 +94,10 @@ function renderSpecList(specs) {
     item.onclick = (function(spec) {
       return function() {
         var name = "[AIR-" + spec.num + "] " + (spec.title || "");
-        showSelContent(name, spec.targetNodeId || "", spec.title || "", spec.desc || "");
+        var meta = (spec.nodeType || "Node") + "\u200a\u00b7\u200a" + (spec.targetNodeId || "");
+        showSelContent(name, meta, spec.title || "", spec.desc || "");
         currentNodeId = spec.targetNodeId || null;
+        currentNodeNum = spec.num || null;
         if (spec.color) { selectedColor = spec.color; pickColor(spec.color); }
         document.getElementById("nodeBadge").style.background = spec.color || selectedColor || "#F24E1E";
         switchTab("sel");
@@ -210,7 +212,7 @@ function deleteDesc() {
   if (!currentNodeId) return;
   var t = I18N[currentLang];
   if (!confirm(t.confirm_delete || "Delete this annotation?")) return;
-  parent.postMessage({ pluginMessage: { type: "delete-spec", nodeId: currentNodeId } }, "*");
+  parent.postMessage({ pluginMessage: { type: "delete-spec", nodeId: currentNodeId, num: currentNodeNum || undefined } }, "*");
 }
 
 function updateDeleteBtn(hasAnnotation) {

@@ -17,6 +17,7 @@ window.onmessage = function(e) {
   if (msg.type === "selection-desc") {
     showSelContent(msg.nodeName, msg.nodeType + "\u200a\u00b7\u200a" + msg.nodeId, msg.title, msg.desc);
     currentNodeId = msg.nodeId;
+    currentNodeNum = msg.num || null;
     if (msg.color) { selectedColor = msg.color; pickColor(msg.color); }
     document.getElementById("nodeBadge").style.background = msg.color || selectedColor || "#F24E1E";
     markClean();

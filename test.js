@@ -915,7 +915,7 @@ function parseIndexText(content) {
 
   // 현재 포맷 감지: [AIRA:N] 헤더가 있으면 현재 포맷
   if (/\[AIRA:\d+\]/.test(content)) {
-    var blocks = content.split(/\n(?=\[AIRA:\d+\])/);
+    var blocks = content.split(/\n\*---\*\n/);
     for (var bi = 0; bi < blocks.length; bi++) {
       var block = blocks[bi].trim();
       var headerMatch = block.match(/\[AIRA:(\d+)\]/);
@@ -938,7 +938,7 @@ function parseIndexText(content) {
         else if (ln.indexOf("color: ") === 0) { color = ln.substring(7); }
         else if (ln.indexOf("target: ") === 0) { target = ln.substring(8); }
       }
-      while (descLines.length > 0 && (descLines[descLines.length - 1] === "" || descLines[descLines.length - 1] === "*---*")) descLines.pop();
+      while (descLines.length > 0 && descLines[descLines.length - 1] === "") descLines.pop();
       var desc = descLines.join("\n");
       map.set(num, { title: title, desc: desc, color: color, target: target });
     }
@@ -980,7 +980,7 @@ function parseIndexText(content) {
   assert("단일 엔트리 desc", r1.get("1").desc.indexOf("[route] /login") >= 0 && r1.get("1").desc.indexOf("[auth] public") >= 0);
 
   // Multiple entries
-  var content2 = "📑 AI-READABLE ANNOTATOR INDEX\n════════════════════════════════\n\n[AIRA:1]\ntitle: Login\ncolor: #FF0000\ntarget: 0:123\n===\n[route] /login\n\n---\n\n[AIRA:2]\ntitle: Dashboard\ncolor: #1E88E5\ntarget: 0:456\n===\n메인 대시보드\n\n════════════════════════════════\n총 2개 스펙 | AIR v1";
+  var content2 = "📑 AI-READABLE ANNOTATOR INDEX\n════════════════════════════════\n\n[AIRA:1]\ntitle: Login\ncolor: #FF0000\ntarget: 0:123\n===\n[route] /login\n\n*---*\n\n[AIRA:2]\ntitle: Dashboard\ncolor: #1E88E5\ntarget: 0:456\n===\n메인 대시보드\n\n════════════════════════════════\n총 2개 스펙 | AIR v1";
   var r2 = parseIndexText(content2);
   assert("복수 엔트리 파싱", r2.size === 2);
   assert("복수 엔트리 1번 title", r2.get("1").title === "Login");

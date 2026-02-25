@@ -690,8 +690,8 @@ function parseIndexText(content: string): Map<string, HiddenData> {
 
   // 현재 포맷 감지: [AIRA:N] 헤더가 있으면 현재 포맷
   if (/\[AIRA:\d+\]/.test(content)) {
-    // ── 현재 포맷 파싱 ──
-    const blocks: string[] = content.split(/\n(?=\[AIRA:\d+\])/);
+    // ── 현재 포맷 파싱 (구분자 *---* 기반 스플릿) ──
+    const blocks: string[] = content.split(/\n\*---\*\n/);
     for (let bi = 0; bi < blocks.length; bi++) {
       const block: string = blocks[bi].trim();
       const headerMatch: RegExpMatchArray | null = block.match(/\[AIRA:(\d+)\]/);
@@ -714,7 +714,7 @@ function parseIndexText(content: string): Map<string, HiddenData> {
         else if (ln.indexOf("color: ") === 0) { color = ln.substring(7); }
         else if (ln.indexOf("target: ") === 0) { target = ln.substring(8); }
       }
-      while (descLines.length > 0 && (descLines[descLines.length - 1] === "" || descLines[descLines.length - 1] === "*---*")) descLines.pop();
+      while (descLines.length > 0 && descLines[descLines.length - 1] === "") descLines.pop();
       const desc: string = descLines.join("\n");
       map.set(num, { title: title, desc: desc, color: color, target: target });
     }
@@ -845,10 +845,9 @@ async function updateSpecIndex(excludeNums?: Set<string>): Promise<void> {
           if (idxFrame.children[ti].type === "TEXT") {
             existingIdx = idxFrame;
             existingTxt = idxFrame.children[ti] as TextNode;
-            // 비우기 전에 먼저 파싱하여 인덱스 데이터 보존
+            // 파싱하여 인덱스 데이터 보존 (비우지 않음 — 나중에 덮어씀)
             const indexContent: string = existingTxt.characters || "";
             indexMap = parseIndexText(indexContent);
-            existingTxt.characters = "";
             break;
           }
         }
@@ -1181,7 +1180,7 @@ async function readSelectedDesc(): Promise<void> {
     figma.ui.postMessage({
       type: "selection-desc",
       nodeId: pTargetId || node.id, nodeName: pTargetName || node.name, nodeType: pTargetType || node.type,
-      title: pTitle, desc: pDesc, color: pColor
+      title: pTitle, desc: pDesc, color: pColor, num: pNum
     });
     return;
   }
@@ -1222,7 +1221,7 @@ async function readSelectedDesc(): Promise<void> {
   figma.ui.postMessage({
     type: "selection-desc",
     nodeId: node.id, nodeName: node.name, nodeType: node.type,
-    title: title, desc: desc, color: color
+    title: title, desc: desc, color: color, num: num || ""
   });
 }
 
@@ -1519,16 +1518,12 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
     }
     let rebuilt: number = 0;
     const children: readonly SceneNode[] = figma.currentPage.children;
-    // Collect all spec data first
+    // Collect all spec data — 패널이 primary, 인덱스가 fallback (updateSpecIndex와 동일 우선순위)
     const allSpecs: Array<{ num: string; data: HiddenData }> = [];
     const foundNums: Record<string, boolean> = {};
-    const rebuildHiddenMap: Map<string, HiddenData> = buildHiddenDataMap();
-    // 1차: buildHiddenDataMap에서 (인덱스 또는 숨김 노드)
-    rebuildHiddenMap.forEach(function(rdata: HiddenData, rnum: string) {
-      allSpecs.push({ num: rnum, data: rdata });
-      foundNums[rnum] = true;
-    });
-    // 2차: 패널 pluginData 폴백
+    const rebuildIndexMap: Map<string, HiddenData> = buildHiddenDataMap();
+
+    // 1차: 패널 pluginData (최신 데이터)
     for (let rk = 0; rk < children.length; rk++) {
       const rck: SceneNode = children[rk];
       const rpMatch: RegExpMatchArray | null = rck.name.match(/^📋 Annotation: (\d+)/);
@@ -1542,18 +1537,18 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
         rpTarget = rck.getPluginData("targetNodeId") || "";
       } catch(e) {}
       if (rpTarget) {
-        let rpTitle: string = "";
-        try {
-          const rpNode: BaseNode | null = await figma.getNodeByIdAsync(rpTarget);
-          if (rpNode) {
-            const rptm: RegExpMatchArray | null = rpNode.name.match(/^\[AIR-\d+\]\s*(.*?)(\s*\|.*)?$/);
-            rpTitle = rptm ? rptm[1] : rpNode.name;
-          }
-        } catch(e) {}
-        allSpecs.push({ num: rpnum, data: { title: rpTitle, desc: rpDesc, color: rpColor, target: rpTarget } });
+        // title: 인덱스에 있으면 사용, 없으면 나중에 노드에서 resolve
+        const idxData: HiddenData | undefined = rebuildIndexMap.get(rpnum);
+        allSpecs.push({ num: rpnum, data: { title: idxData ? idxData.title : "", desc: rpDesc, color: rpColor, target: rpTarget } });
         foundNums[rpnum] = true;
       }
     }
+    // 2차: 인덱스 데이터 fallback (패널이 없는 어노테이션 보존)
+    rebuildIndexMap.forEach(function(rdata: HiddenData, rnum: string) {
+      if (foundNums[rnum]) return;
+      allSpecs.push({ num: rnum, data: rdata });
+      foundNums[rnum] = true;
+    });
     // Rebuild each panel — 병렬로 target 노드 resolve
     const rebuildTargetIds: string[] = [];
     for (let si = 0; si < allSpecs.length; si++) {
@@ -1626,7 +1621,7 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
   if (msg.type === "read-selection") { readSelectedDesc(); }
 
   if (msg.type === "list-specs") {
-    const specs: Array<{ num: string; title: string; color: string; desc: string; targetNodeId: string; preview: string; hidden: boolean }> = [];
+    const specs: Array<{ num: string; title: string; color: string; desc: string; targetNodeId: string; nodeType: string; preview: string; hidden: boolean }> = [];
     const foundNums: Record<string, boolean> = {};
     const children: readonly SceneNode[] = figma.currentPage.children;
     const listHiddenMap: Map<string, HiddenData> = buildHiddenDataMap();
@@ -1653,6 +1648,7 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
         color: data.color,
         desc: data.desc,
         targetNodeId: targetId,
+        nodeType: "",
         preview: data.desc ? data.desc.split("\n").slice(0, 2).join(" ") : "",
         hidden: listHiddenNums.has(parseInt(num))
       });
@@ -1660,6 +1656,8 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
     });
 
     // 2차: 패널 pluginData에서 폴백 스캔 (숨김 노드가 사라진 경우)
+    interface ListFallback { pnum: string; pDesc: string; pColor: string; pTargetId: string; }
+    const listFallbacks: ListFallback[] = [];
     for (let k = 0; k < children.length; k++) {
       const ck: SceneNode = children[k];
       const panelMatch: RegExpMatchArray | null = ck.name.match(/^📋 Annotation: (\d+)/);
@@ -1673,29 +1671,35 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
         pColor = ck.getPluginData("markerColor") || "";
         pTargetId = ck.getPluginData("targetNodeId") || "";
       } catch(e) {}
-
-      let pTitle: string = "";
       if (pTargetId) {
-        try {
-          const tNode: BaseNode | null = await figma.getNodeByIdAsync(pTargetId);
-          if (tNode) {
-            const tm: RegExpMatchArray | null = tNode.name.match(/^\[AIR-\d+\]\s*(.*?)(\s*\|.*)?$/);
-            pTitle = tm ? tm[1] : tNode.name;
-          }
-        } catch(e) {}
+        listFallbacks.push({ pnum: pnum, pDesc: pDesc, pColor: pColor, pTargetId: pTargetId });
+        foundNums[pnum] = true;
       }
-
+    }
+    // 일괄 병렬 resolve (Bug 6 수정)
+    const listFbPromises: Array<Promise<BaseNode | null>> = [];
+    for (let fi = 0; fi < listFallbacks.length; fi++) {
+      listFbPromises.push(figma.getNodeByIdAsync(listFallbacks[fi].pTargetId));
+    }
+    const listFbNodes: Array<BaseNode | null> = await Promise.all(listFbPromises);
+    for (let fi = 0; fi < listFallbacks.length; fi++) {
+      const fb: ListFallback = listFallbacks[fi];
+      const tNode: BaseNode | null = listFbNodes[fi];
+      let pTitle: string = "";
+      if (tNode) {
+        const tm: RegExpMatchArray | null = tNode.name.match(/^\[AIR-\d+\]\s*(.*?)(\s*\|.*)?$/);
+        pTitle = tm ? tm[1] : tNode.name;
+      }
       specs.push({
-        num: pnum,
+        num: fb.pnum,
         title: pTitle,
-        color: pColor,
-        desc: pDesc,
-        targetNodeId: pTargetId,
-        preview: pDesc ? pDesc.split("\n").slice(0, 2).join(" ") : "",
-        hidden: listHiddenNums.has(parseInt(pnum))
+        color: fb.pColor,
+        desc: fb.pDesc,
+        targetNodeId: fb.pTargetId,
+        nodeType: tNode ? tNode.type : "",
+        preview: fb.pDesc ? fb.pDesc.split("\n").slice(0, 2).join(" ") : "",
+        hidden: listHiddenNums.has(parseInt(fb.pnum))
       });
-      foundNums[pnum] = true;
-
     }
     // 번호순 정렬
     specs.sort(function(a, b) { return parseInt(a.num) - parseInt(b.num); });
@@ -1726,7 +1730,9 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
       _readingSelection = true;
       figma.currentPage.selection = [node as SceneNode];
       _readingSelection = false;
-      await updateSpecIndex();
+      // desc가 비어있으면 해당 번호를 인덱스에서 제외 (ghost entry 방지)
+      const descEmpty: boolean = !msg.desc || !msg.desc.trim();
+      await updateSpecIndex(descEmpty ? new Set([existingNum]) : undefined);
       readSelectedDesc();
     } else {
       figma.notify("❌ " + result.error, { error: true });
