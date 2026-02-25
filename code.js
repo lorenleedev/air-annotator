@@ -690,6 +690,7 @@
     return __async(this, null, function* () {
       let existingIdx = null;
       let existingTxt = null;
+      let indexMap = /* @__PURE__ */ new Map();
       for (let ri = figma.currentPage.children.length - 1; ri >= 0; ri--) {
         const rc = figma.currentPage.children[ri];
         if (rc.name === INDEX_NAME) {
@@ -699,6 +700,8 @@
               if (idxFrame.children[ti].type === "TEXT") {
                 existingIdx = idxFrame;
                 existingTxt = idxFrame.children[ti];
+                const indexContent = existingTxt.characters || "";
+                indexMap = parseIndexText(indexContent);
                 existingTxt.characters = "";
                 break;
               }
@@ -709,14 +712,12 @@
           }
         }
       }
-      const hiddenMap = buildHiddenDataMap();
       if (excludeNums) {
         excludeNums.forEach(function(n) {
-          hiddenMap.delete(n);
+          indexMap.delete(n);
         });
       }
       const hiddenNums = getHiddenNums();
-      const pendingHidden = [];
       const pendingFallback = [];
       const foundNums = {};
       const panelTargetCache = {};
@@ -745,29 +746,30 @@
           continue;
         }
       }
-      hiddenMap.forEach(function(data, num) {
+      const specs = [];
+      const pendingResolve = [];
+      indexMap.forEach(function(data, num) {
         const targetNodeId = data.target || panelTargetCache[num] || "";
-        pendingHidden.push({ num, data, targetNodeId });
+        pendingResolve.push({ num, targetNodeId, title: data.title, desc: data.desc });
         foundNums[num] = true;
       });
-      const hiddenNodePromises = [];
-      for (let i = 0; i < pendingHidden.length; i++) {
-        if (pendingHidden[i].targetNodeId) {
-          hiddenNodePromises.push(figma.getNodeByIdAsync(pendingHidden[i].targetNodeId));
+      const resolvePromises = [];
+      for (let i = 0; i < pendingResolve.length; i++) {
+        if (pendingResolve[i].targetNodeId) {
+          resolvePromises.push(figma.getNodeByIdAsync(pendingResolve[i].targetNodeId));
         } else {
-          hiddenNodePromises.push(Promise.resolve(null));
+          resolvePromises.push(Promise.resolve(null));
         }
       }
-      const hiddenResolvedNodes = yield Promise.all(hiddenNodePromises);
-      const specs = [];
-      for (let i = 0; i < pendingHidden.length; i++) {
-        const ph = pendingHidden[i];
-        const tNode = hiddenResolvedNodes[i];
+      const resolvedNodes = yield Promise.all(resolvePromises);
+      for (let i = 0; i < pendingResolve.length; i++) {
+        const pr = pendingResolve[i];
+        const tNode = resolvedNodes[i];
         specs.push({
-          num: parseInt(ph.num),
-          title: ph.data.title,
-          desc: ph.data.desc,
-          nodeId: ph.targetNodeId,
+          num: parseInt(pr.num),
+          title: pr.title,
+          desc: pr.desc,
+          nodeId: pr.targetNodeId,
           nodeType: tNode ? tNode.type : "",
           nodeName: tNode ? tNode.name : ""
         });
@@ -828,7 +830,7 @@
         lines.push(header);
         lines.push("title: " + sp.title);
         let specColor = "";
-        const hd = hiddenMap.get(String(sp.num));
+        const hd = indexMap.get(String(sp.num));
         if (hd) specColor = hd.color;
         if (!specColor) specColor = panelColorCache[String(sp.num)] || "";
         lines.push("color: " + specColor);

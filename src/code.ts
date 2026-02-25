@@ -802,9 +802,10 @@ async function setAnnotationVisibility(num: number, isVisible: boolean): Promise
 // ──────────────────────────────────────
 
 async function updateSpecIndex(excludeNums?: Set<string>): Promise<void> {
-  // 기존 인덱스 프레임 검색 — TextNode 내용을 비워서 stale 읽기 방지
+  // 1단계: 기존 인덱스 프레임 검색 + 텍스트를 비우기 전에 파싱 (primary data)
   let existingIdx: FrameNode | null = null;
   let existingTxt: TextNode | null = null;
+  let indexMap: Map<string, HiddenData> = new Map();
   for (let ri = figma.currentPage.children.length - 1; ri >= 0; ri--) {
     const rc: SceneNode = figma.currentPage.children[ri];
     if (rc.name === INDEX_NAME) {
@@ -814,7 +815,10 @@ async function updateSpecIndex(excludeNums?: Set<string>): Promise<void> {
           if (idxFrame.children[ti].type === "TEXT") {
             existingIdx = idxFrame;
             existingTxt = idxFrame.children[ti] as TextNode;
-            existingTxt.characters = ""; // 비워서 buildHiddenDataMap()이 패널 폴백 사용하도록
+            // 비우기 전에 먼저 파싱하여 인덱스 데이터 보존
+            const indexContent: string = existingTxt.characters || "";
+            indexMap = parseIndexText(indexContent);
+            existingTxt.characters = "";
             break;
           }
         }
@@ -824,18 +828,12 @@ async function updateSpecIndex(excludeNums?: Set<string>): Promise<void> {
       }
     }
   }
-  const hiddenMap: Map<string, HiddenData> = buildHiddenDataMap();
   if (excludeNums) {
-    excludeNums.forEach(function(n: string) { hiddenMap.delete(n); });
+    excludeNums.forEach(function(n: string) { indexMap.delete(n); });
   }
   const hiddenNums: Set<number> = getHiddenNums();
 
-  // 단일 패스: 인덱스 제거 + 패널 동시 수집
-  interface PendingHidden {
-    num: string;
-    data: HiddenData;
-    targetNodeId: string;
-  }
+  // 2단계: 패널 pluginData 수집 (보충 데이터)
   interface PendingFallback {
     num: string;
     fpDesc: string;
@@ -843,7 +841,6 @@ async function updateSpecIndex(excludeNums?: Set<string>): Promise<void> {
     fpTarget: string;
   }
 
-  const pendingHidden: PendingHidden[] = [];
   const pendingFallback: PendingFallback[] = [];
   const foundNums: Record<string, boolean> = {};
   const panelTargetCache: Record<string, string> = {};
@@ -852,11 +849,8 @@ async function updateSpecIndex(excludeNums?: Set<string>): Promise<void> {
   const pageChildren: readonly SceneNode[] = figma.currentPage.children;
   for (let i = pageChildren.length - 1; i >= 0; i--) {
     const c: SceneNode = pageChildren[i];
-
-    // 기존 인덱스 건너뜀 (재사용 대상은 첫 패스에서 처리됨)
     if (c.name === INDEX_NAME) { continue; }
 
-    // 패널 후보 수집 (폴백 + targetNodeId 캐시용)
     const fpMatch: RegExpMatchArray | null = c.name.match(/^📋 Annotation: (\d+)/);
     if (fpMatch) {
       const fpnum: string = fpMatch[1];
@@ -875,39 +869,47 @@ async function updateSpecIndex(excludeNums?: Set<string>): Promise<void> {
     }
   }
 
-  // 1차: hiddenMap에서 데이터 수집 (인덱스 또는 레거시 숨김 노드)
-  hiddenMap.forEach(function(data: HiddenData, num: string) {
+  // 3단계: 인덱스 데이터 (primary) → specs 수집
+  const specs: SpecInfo[] = [];
+
+  interface PendingResolve {
+    num: string;
+    targetNodeId: string;
+    title: string;
+    desc: string;
+  }
+  const pendingResolve: PendingResolve[] = [];
+  indexMap.forEach(function(data: HiddenData, num: string) {
     const targetNodeId: string = data.target || panelTargetCache[num] || "";
-    pendingHidden.push({ num: num, data: data, targetNodeId: targetNodeId });
+    pendingResolve.push({ num: num, targetNodeId: targetNodeId, title: data.title, desc: data.desc });
     foundNums[num] = true;
   });
 
   // targetNodeId 일괄 병렬 resolve
-  const hiddenNodePromises: Array<Promise<BaseNode | null>> = [];
-  for (let i = 0; i < pendingHidden.length; i++) {
-    if (pendingHidden[i].targetNodeId) {
-      hiddenNodePromises.push(figma.getNodeByIdAsync(pendingHidden[i].targetNodeId));
+  const resolvePromises: Array<Promise<BaseNode | null>> = [];
+  for (let i = 0; i < pendingResolve.length; i++) {
+    if (pendingResolve[i].targetNodeId) {
+      resolvePromises.push(figma.getNodeByIdAsync(pendingResolve[i].targetNodeId));
     } else {
-      hiddenNodePromises.push(Promise.resolve(null));
+      resolvePromises.push(Promise.resolve(null));
     }
   }
-  const hiddenResolvedNodes: Array<BaseNode | null> = await Promise.all(hiddenNodePromises);
+  const resolvedNodes: Array<BaseNode | null> = await Promise.all(resolvePromises);
 
-  const specs: SpecInfo[] = [];
-  for (let i = 0; i < pendingHidden.length; i++) {
-    const ph: PendingHidden = pendingHidden[i];
-    const tNode: BaseNode | null = hiddenResolvedNodes[i];
+  for (let i = 0; i < pendingResolve.length; i++) {
+    const pr: PendingResolve = pendingResolve[i];
+    const tNode: BaseNode | null = resolvedNodes[i];
     specs.push({
-      num: parseInt(ph.num),
-      title: ph.data.title,
-      desc: ph.data.desc,
-      nodeId: ph.targetNodeId,
+      num: parseInt(pr.num),
+      title: pr.title,
+      desc: pr.desc,
+      nodeId: pr.targetNodeId,
       nodeType: tNode ? tNode.type : "",
       nodeName: tNode ? tNode.name : ""
     });
   }
 
-  // 2차: 패널 pluginData 폴백 → hiddenMap에 없는 것만 일괄 병렬 resolve
+  // 4단계: 패널 pluginData 보충 → 인덱스에 없는 것만 추가
   const filteredFallback: PendingFallback[] = [];
   for (let i = 0; i < pendingFallback.length; i++) {
     if (!foundNums[pendingFallback[i].num]) {
@@ -967,9 +969,9 @@ async function updateSpecIndex(excludeNums?: Set<string>): Promise<void> {
     if (hiddenNums.has(sp.num)) header += "  [HIDDEN]";
     lines.push(header);
     lines.push("title: " + sp.title);
-    // Find color from hiddenMap or cached panel data
+    // Find color from index (primary) or cached panel data (fallback)
     let specColor: string = "";
-    const hd: HiddenData | undefined = hiddenMap.get(String(sp.num));
+    const hd: HiddenData | undefined = indexMap.get(String(sp.num));
     if (hd) specColor = hd.color;
     if (!specColor) specColor = panelColorCache[String(sp.num)] || "";
     lines.push("color: " + specColor);
