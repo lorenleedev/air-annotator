@@ -574,40 +574,66 @@
   function parseIndexText(content) {
     const map = /* @__PURE__ */ new Map();
     if (!content) return map;
-    const blocks = content.split(/\n(?=\[AIRA:\d+\])/);
-    for (let bi = 0; bi < blocks.length; bi++) {
-      const block = blocks[bi].trim();
-      const headerMatch = block.match(/\[AIRA:(\d+)\]/);
-      if (!headerMatch) continue;
-      const num = headerMatch[1];
-      const lineStart = block.indexOf("[AIRA:" + num + "]");
-      const afterHeader = block.substring(lineStart);
-      const lines = afterHeader.split("\n");
-      let title = "", color = "", target = "";
-      let pastSep = false;
+    if (/\[AIRA:\d+\]/.test(content)) {
+      const blocks = content.split(/\n(?=\[AIRA:\d+\])/);
+      for (let bi = 0; bi < blocks.length; bi++) {
+        const block = blocks[bi].trim();
+        const headerMatch = block.match(/\[AIRA:(\d+)\]/);
+        if (!headerMatch) continue;
+        const num = headerMatch[1];
+        const lineStart = block.indexOf("[AIRA:" + num + "]");
+        const afterHeader = block.substring(lineStart);
+        const lines = afterHeader.split("\n");
+        let title = "", color = "", target = "";
+        let pastSep = false;
+        const descLines = [];
+        for (let li = 1; li < lines.length; li++) {
+          const ln = lines[li];
+          if (ln === "===") {
+            pastSep = true;
+            continue;
+          }
+          if (pastSep) {
+            if (ln.indexOf("════") === 0) break;
+            descLines.push(ln);
+            continue;
+          }
+          if (ln.indexOf("title: ") === 0) {
+            title = ln.substring(7);
+          } else if (ln.indexOf("color: ") === 0) {
+            color = ln.substring(7);
+          } else if (ln.indexOf("target: ") === 0) {
+            target = ln.substring(8);
+          }
+        }
+        while (descLines.length > 0 && (descLines[descLines.length - 1] === "" || descLines[descLines.length - 1] === "*---*")) descLines.pop();
+        const desc = descLines.join("\n");
+        map.set(num, { title, desc, color, target });
+      }
+      return map;
+    }
+    const legacyBlocks = content.split(/\n(?=\[AIR-\d+\])/);
+    for (let bi = 0; bi < legacyBlocks.length; bi++) {
+      const block = legacyBlocks[bi].trim();
+      const hm = block.match(/^\[AIR-(\d+)\]\s+(.*?)(?:\s{2,}\((\w+),\s*([\w:;]+)\))?\s*$/m);
+      if (!hm) continue;
+      const num = hm[1];
+      const title = hm[2].trim();
+      const target = hm[4] ? hm[4].trim() : "";
+      const lines = block.split("\n");
       const descLines = [];
       for (let li = 1; li < lines.length; li++) {
         const ln = lines[li];
-        if (ln === "===") {
-          pastSep = true;
+        if (ln.indexOf("════") === 0) break;
+        if (ln.length === 0) {
+          descLines.push("");
           continue;
         }
-        if (pastSep) {
-          if (ln.indexOf("════") === 0) break;
-          descLines.push(ln);
-          continue;
-        }
-        if (ln.indexOf("title: ") === 0) {
-          title = ln.substring(7);
-        } else if (ln.indexOf("color: ") === 0) {
-          color = ln.substring(7);
-        } else if (ln.indexOf("target: ") === 0) {
-          target = ln.substring(8);
-        }
+        descLines.push(ln.indexOf("  ") === 0 ? ln.substring(2) : ln);
       }
-      while (descLines.length > 0 && (descLines[descLines.length - 1] === "" || descLines[descLines.length - 1] === "*---*")) descLines.pop();
+      while (descLines.length > 0 && descLines[descLines.length - 1] === "") descLines.pop();
       const desc = descLines.join("\n");
-      map.set(num, { title, desc, color, target });
+      map.set(num, { title, desc, color: "", target });
     }
     return map;
   }

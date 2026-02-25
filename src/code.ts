@@ -687,36 +687,65 @@ function buildHiddenDataMap(): Map<string, HiddenData> {
 function parseIndexText(content: string): Map<string, HiddenData> {
   const map: Map<string, HiddenData> = new Map();
   if (!content) return map;
-  // Split by [AIRA:N] headers (--- in desc won't break parsing)
-  const blocks: string[] = content.split(/\n(?=\[AIRA:\d+\])/);
-  for (let bi = 0; bi < blocks.length; bi++) {
-    const block: string = blocks[bi].trim();
-    // Look for [AIRA:N] header (also support [HIDDEN] marker)
-    const headerMatch: RegExpMatchArray | null = block.match(/\[AIRA:(\d+)\]/);
-    if (!headerMatch) continue;
-    const num: string = headerMatch[1];
-    // Extract the part after [AIRA:N] line
-    const lineStart: number = block.indexOf("[AIRA:" + num + "]");
-    const afterHeader: string = block.substring(lineStart);
-    const lines: string[] = afterHeader.split("\n");
-    let title: string = "", color: string = "", target: string = "";
-    let pastSep: boolean = false;
+
+  // 현재 포맷 감지: [AIRA:N] 헤더가 있으면 현재 포맷
+  if (/\[AIRA:\d+\]/.test(content)) {
+    // ── 현재 포맷 파싱 ──
+    const blocks: string[] = content.split(/\n(?=\[AIRA:\d+\])/);
+    for (let bi = 0; bi < blocks.length; bi++) {
+      const block: string = blocks[bi].trim();
+      const headerMatch: RegExpMatchArray | null = block.match(/\[AIRA:(\d+)\]/);
+      if (!headerMatch) continue;
+      const num: string = headerMatch[1];
+      const lineStart: number = block.indexOf("[AIRA:" + num + "]");
+      const afterHeader: string = block.substring(lineStart);
+      const lines: string[] = afterHeader.split("\n");
+      let title: string = "", color: string = "", target: string = "";
+      let pastSep: boolean = false;
+      const descLines: string[] = [];
+      for (let li = 1; li < lines.length; li++) {
+        const ln: string = lines[li];
+        if (ln === "===") { pastSep = true; continue; }
+        if (pastSep) {
+          if (ln.indexOf("\u2550\u2550\u2550\u2550") === 0) break;
+          descLines.push(ln); continue;
+        }
+        if (ln.indexOf("title: ") === 0) { title = ln.substring(7); }
+        else if (ln.indexOf("color: ") === 0) { color = ln.substring(7); }
+        else if (ln.indexOf("target: ") === 0) { target = ln.substring(8); }
+      }
+      while (descLines.length > 0 && (descLines[descLines.length - 1] === "" || descLines[descLines.length - 1] === "*---*")) descLines.pop();
+      const desc: string = descLines.join("\n");
+      map.set(num, { title: title, desc: desc, color: color, target: target });
+    }
+    return map;
+  }
+
+  // ── 레거시 포맷 파싱 (v1 마이그레이션) ──
+  // 헤더: [AIR-N] Title  (TYPE, nodeId) 또는 [AIR-N] Title
+  // desc: 2칸 들여쓰기된 줄, 빈 줄로 구분
+  const legacyBlocks: string[] = content.split(/\n(?=\[AIR-\d+\])/);
+  for (let bi = 0; bi < legacyBlocks.length; bi++) {
+    const block: string = legacyBlocks[bi].trim();
+    // [AIR-N] Title  (TYPE, nodeId) 형식 파싱
+    const hm: RegExpMatchArray | null = block.match(/^\[AIR-(\d+)\]\s+(.*?)(?:\s{2,}\((\w+),\s*([\w:;]+)\))?\s*$/m);
+    if (!hm) continue;
+    const num: string = hm[1];
+    const title: string = hm[2].trim();
+    const target: string = hm[4] ? hm[4].trim() : "";
+    // 헤더 이후 줄들이 desc (2칸 들여쓰기 제거)
+    const lines: string[] = block.split("\n");
     const descLines: string[] = [];
     for (let li = 1; li < lines.length; li++) {
       const ln: string = lines[li];
-      if (ln === "===") { pastSep = true; continue; }
-      if (pastSep) {
-        if (ln.indexOf("\u2550\u2550\u2550\u2550") === 0) break;
-        descLines.push(ln); continue;
-      }
-      if (ln.indexOf("title: ") === 0) { title = ln.substring(7); }
-      else if (ln.indexOf("color: ") === 0) { color = ln.substring(7); }
-      else if (ln.indexOf("target: ") === 0) { target = ln.substring(8); }
+      if (ln.indexOf("\u2550\u2550\u2550\u2550") === 0) break;
+      // 2칸 들여쓰기 제거, 빈 줄 보존
+      if (ln.length === 0) { descLines.push(""); continue; }
+      descLines.push(ln.indexOf("  ") === 0 ? ln.substring(2) : ln);
     }
-    // Trim trailing empty lines and block separator from desc
-    while (descLines.length > 0 && (descLines[descLines.length - 1] === "" || descLines[descLines.length - 1] === "*---*")) descLines.pop();
+    while (descLines.length > 0 && descLines[descLines.length - 1] === "") descLines.pop();
     const desc: string = descLines.join("\n");
-    map.set(num, { title: title, desc: desc, color: color, target: target });
+    map.set(num, { title: title, desc: desc, color: "", target: target });
   }
   return map;
 }

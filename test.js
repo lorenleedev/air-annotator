@@ -912,28 +912,59 @@ suite("parseIndexText");
 function parseIndexText(content) {
   var map = new Map();
   if (!content) return map;
-  var blocks = content.split(/\n---\n/);
-  for (var bi = 0; bi < blocks.length; bi++) {
-    var block = blocks[bi].trim();
-    var headerMatch = block.match(/\[AIRA:(\d+)\]/);
-    if (!headerMatch) continue;
-    var num = headerMatch[1];
-    var lineStart = block.indexOf("[AIRA:" + num + "]");
-    var afterHeader = block.substring(lineStart);
-    var lines = afterHeader.split("\n");
-    var title = "", color = "", target = "";
-    var pastSep = false;
-    var descLines = [];
-    for (var li = 1; li < lines.length; li++) {
-      var ln = lines[li];
-      if (ln === "===") { pastSep = true; continue; }
-      if (pastSep) { descLines.push(ln); continue; }
-      if (ln.indexOf("title: ") === 0) { title = ln.substring(7); }
-      else if (ln.indexOf("color: ") === 0) { color = ln.substring(7); }
-      else if (ln.indexOf("target: ") === 0) { target = ln.substring(8); }
+
+  // 현재 포맷 감지: [AIRA:N] 헤더가 있으면 현재 포맷
+  if (/\[AIRA:\d+\]/.test(content)) {
+    var blocks = content.split(/\n(?=\[AIRA:\d+\])/);
+    for (var bi = 0; bi < blocks.length; bi++) {
+      var block = blocks[bi].trim();
+      var headerMatch = block.match(/\[AIRA:(\d+)\]/);
+      if (!headerMatch) continue;
+      var num = headerMatch[1];
+      var lineStart = block.indexOf("[AIRA:" + num + "]");
+      var afterHeader = block.substring(lineStart);
+      var lines = afterHeader.split("\n");
+      var title = "", color = "", target = "";
+      var pastSep = false;
+      var descLines = [];
+      for (var li = 1; li < lines.length; li++) {
+        var ln = lines[li];
+        if (ln === "===") { pastSep = true; continue; }
+        if (pastSep) {
+          if (ln.indexOf("\u2550\u2550\u2550\u2550") === 0) break;
+          descLines.push(ln); continue;
+        }
+        if (ln.indexOf("title: ") === 0) { title = ln.substring(7); }
+        else if (ln.indexOf("color: ") === 0) { color = ln.substring(7); }
+        else if (ln.indexOf("target: ") === 0) { target = ln.substring(8); }
+      }
+      while (descLines.length > 0 && (descLines[descLines.length - 1] === "" || descLines[descLines.length - 1] === "*---*")) descLines.pop();
+      var desc = descLines.join("\n");
+      map.set(num, { title: title, desc: desc, color: color, target: target });
     }
-    var desc = descLines.join("\n");
-    map.set(num, { title: title, desc: desc, color: color, target: target });
+    return map;
+  }
+
+  // 레거시 포맷 파싱 (v1 마이그레이션)
+  var legacyBlocks = content.split(/\n(?=\[AIR-\d+\])/);
+  for (var bi2 = 0; bi2 < legacyBlocks.length; bi2++) {
+    var lb = legacyBlocks[bi2].trim();
+    var hm = lb.match(/^\[AIR-(\d+)\]\s+(.*?)(?:\s{2,}\((\w+),\s*([\w:;]+)\))?\s*$/m);
+    if (!hm) continue;
+    var lnum = hm[1];
+    var ltitle = hm[2].trim();
+    var ltarget = hm[4] ? hm[4].trim() : "";
+    var llines = lb.split("\n");
+    var ldescLines = [];
+    for (var li2 = 1; li2 < llines.length; li2++) {
+      var lln = llines[li2];
+      if (lln.indexOf("\u2550\u2550\u2550\u2550") === 0) break;
+      if (lln.length === 0) { ldescLines.push(""); continue; }
+      ldescLines.push(lln.indexOf("  ") === 0 ? lln.substring(2) : lln);
+    }
+    while (ldescLines.length > 0 && ldescLines[ldescLines.length - 1] === "") ldescLines.pop();
+    var ldesc = ldescLines.join("\n");
+    map.set(lnum, { title: ltitle, desc: ldesc, color: "", target: ltarget });
   }
   return map;
 }
@@ -982,6 +1013,42 @@ function parseIndexText(content) {
   var content8 = "[AIRA:4]\ntitle: \ncolor: \ntarget: 0:222\n===\nsome desc";
   var r8 = parseIndexText(content8);
   assert("빈 title/color 처리", r8.size === 1 && r8.get("4").title === "" && r8.get("4").color === "");
+})();
+
+// ══════════════════════════════════════
+// 18. 레거시 인덱스 마이그레이션
+// ══════════════════════════════════════
+suite("레거시 인덱스 마이그레이션");
+
+(function() {
+  // 레거시 포맷: nodeId 포함
+  var legacy1 = "📑 AI-READABLE ANNOTATOR INDEX\nAI에게: 각 [AIR-번호]는 Figma 요소에 연결된 기획 스펙입니다.\n════════════════════════════════\n\n[AIR-1] 메인 배너\n  [route] 홈>메인 배너\n  현재 계약 종료 120일 전 배너 자동 변경\n\n[AIR-2] 알림  (INSTANCE, I35:8009;3342:32881)\n  [route] 경로: 홈>알림\n  알림은 만료 없이 노출\n\n════════════════════════════════\n총 2개 스펙 | AIR v1";
+  var r1 = parseIndexText(legacy1);
+  assert("레거시 2개 엔트리 파싱", r1.size === 2);
+  assert("레거시 1번 title", r1.get("1").title === "메인 배너");
+  assert("레거시 1번 target 없음", r1.get("1").target === "");
+  assert("레거시 1번 color 빈값", r1.get("1").color === "");
+  assert("레거시 1번 desc에 [route] 포함", r1.get("1").desc.indexOf("[route] 홈>메인 배너") >= 0);
+  assert("레거시 2번 title", r1.get("2").title === "알림");
+  assert("레거시 2번 target nodeId 파싱", r1.get("2").target === "I35:8009;3342:32881");
+  assert("레거시 2번 desc에 [route] 포함", r1.get("2").desc.indexOf("[route] 경로: 홈>알림") >= 0);
+
+  // 레거시: nodeId 없는 항목
+  var legacy2 = "[AIR-5] 재계약 조건 선택  (FRAME, 169:5410)\n  5개월 이하 단기\n  5-a) 버튼 클릭";
+  var r2 = parseIndexText(legacy2);
+  assert("레거시 FRAME 타입 nodeId 파싱", r2.get("5").target === "169:5410");
+  assert("레거시 desc 들여쓰기 제거", r2.get("5").desc.indexOf("5개월 이하 단기") >= 0);
+  assert("레거시 desc 들여쓰기 제거 확인", r2.get("5").desc.indexOf("  5개월") === -1);
+
+  // 레거시: 큰 번호
+  var legacy3 = "[AIR-62] 회신자/회신 일시/재계약 여부  (INSTANCE, 181:6443)\n  sf에서 받아온 정보";
+  var r3 = parseIndexText(legacy3);
+  assert("레거시 큰 번호 파싱", r3.size === 1 && r3.get("62").title === "회신자/회신 일시/재계약 여부");
+
+  // 현재 포맷이 섞이지 않는지 확인
+  var current = "[AIRA:1]\ntitle: Test\ncolor: #000\ntarget: 0:1\n===\ndesc here";
+  var r4 = parseIndexText(current);
+  assert("현재 포맷은 레거시로 파싱 안됨", r4.size === 1 && r4.get("1").title === "Test");
 })();
 
 // ══════════════════════════════════════
