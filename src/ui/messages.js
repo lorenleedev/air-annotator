@@ -30,6 +30,12 @@ window.onmessage = function(e) {
     markClean();
     parent.postMessage({ pluginMessage: { type: "list-specs" } }, "*");
   }
+  if (msg.type === "write-error") {
+    var btn = document.getElementById("btnSave");
+    var t = I18N[currentLang];
+    btn.textContent = t.btn_save;
+    btn.disabled = false;
+  }
   if (msg.type === "batch-done") parent.postMessage({ pluginMessage: { type: "list-specs" } }, "*");
   if (msg.type === "delete-done") {
     clearDesc();

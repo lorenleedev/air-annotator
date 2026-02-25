@@ -3,6 +3,7 @@ var figmaFileKey = "";
 
 function exportSpecs(format) {
   if (!cachedSpecs || cachedSpecs.length === 0) return;
+  if (format !== "json" && format !== "md") return;
   var output = "", filename = "air-annotations", mime = "text/plain";
   var figmaLink = figmaFileKey ? "https://www.figma.com/design/" + figmaFileKey : "";
 

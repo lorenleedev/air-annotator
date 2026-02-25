@@ -4,7 +4,8 @@ parent.postMessage({ pluginMessage: { type: "init" } }, "*");
 document.addEventListener("keydown", function(e) {
   if ((e.metaKey || e.ctrlKey) && e.key === "s") {
     e.preventDefault();
-    if (currentNodeId && !document.getElementById("btnSave").classList.contains("btn-muted")) {
+    var _sb = document.getElementById("btnSave");
+    if (currentNodeId && !_sb.disabled && !_sb.classList.contains("btn-muted")) {
       saveDesc();
     }
   }

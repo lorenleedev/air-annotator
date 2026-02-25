@@ -630,12 +630,17 @@ async function removeExistingArtifacts(num: string | number): Promise<void> {
 
   let targetNodeId: string = "";
   const children: readonly SceneNode[] = figma.currentPage.children;
-  // 1차 패스: targetNodeId 수집
+  // 1차 패스: targetNodeId 수집 (패널 pluginData)
   for (let i = 0; i < children.length; i++) {
     const c: SceneNode = children[i];
     if (!targetNodeId && c.name === panelName) {
       try { targetNodeId = c.getPluginData("targetNodeId") || ""; } catch(e) {}
     }
+  }
+  // 폴백: 인덱스에서 targetNodeId 조회
+  if (!targetNodeId) {
+    const indexData: HiddenData | null = readHiddenData(String(num));
+    if (indexData && indexData.target) targetNodeId = indexData.target;
   }
   // 2차 패스: 산출물 삭제
   for (let i = children.length - 1; i >= 0; i--) {
@@ -1298,9 +1303,6 @@ async function applyBatch(mappings: BatchMapping[]): Promise<BatchResult> {
   let success: number = 0, fail: number = 0;
   const errors: string[] = [];
   const nextNum: number = getNextNum();
-  // 배치 시작 전 캐시를 전체 범위로 즉시 갱신 (레이스 방지)
-  const maxBatchNum: number = nextNum + mappings.length - 1;
-  figma.currentPage.setPluginData("airMaxNum", String(maxBatchNum));
   for (let i = 0; i < mappings.length; i++) {
     const m: BatchMapping = mappings[i];
     const num: number = nextNum + i;
@@ -1461,9 +1463,6 @@ async function renumberAllSpecs(): Promise<void> {
     }
   });
   setHiddenNums(newHiddenNums);
-
-  // Update airMaxNum cache
-  figma.currentPage.setPluginData("airMaxNum", String(entries.length));
 
   // Update index after renumbering
   await updateSpecIndex();
@@ -1697,6 +1696,7 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
     const node: BaseNode | null = await figma.getNodeByIdAsync(msg.nodeId);
     if (!node) {
       figma.notify("❌ 노드를 찾을 수 없습니다.", { error: true });
+      figma.ui.postMessage({ type: "write-error" });
       return;
     }
     let existingNum: string | null = null;
@@ -1716,6 +1716,7 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
       readSelectedDesc();
     } else {
       figma.notify("❌ " + result.error, { error: true });
+      figma.ui.postMessage({ type: "write-error" });
     }
   }
 
@@ -1725,7 +1726,7 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
     figma.notify(notice);
     figma.ui.postMessage({ type: "batch-done", result: result });
     figma.ui.postMessage({ type: "layers-scanned", layers: scanLayers(figma.currentPage, 0) });
-    updateSpecIndex();
+    await updateSpecIndex();
   }
 
   if (msg.type === "select-node") {
@@ -1778,6 +1779,7 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
   if (msg.type === "rebuild-index") {
     await updateSpecIndex();
     figma.notify("📑 AI용 스펙 인덱스를 최신 상태로 갱신했어요");
+    figma.ui.postMessage({ type: "rebuild-done" });
   }
 
   if (msg.type === "toggle-visibility") {
@@ -1791,7 +1793,7 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
     setHiddenNums(hiddenSet);
     await setAnnotationVisibility(num, msg.visible);
     figma.ui.postMessage({ type: "visibility-changed", num: msg.num, visible: msg.visible });
-    updateSpecIndex();
+    await updateSpecIndex();
   }
 
   if (msg.type === "set-all-visibility") {
@@ -1863,7 +1865,7 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
     const label: string = msg.visible ? "shown" : "hidden";
     figma.notify("👁️ " + allNums.length + " annotation(s) " + label);
     figma.ui.postMessage({ type: "all-visibility-changed", visible: msg.visible });
-    updateSpecIndex();
+    await updateSpecIndex();
   }
 
   if (msg.type === "reorder-specs") {
@@ -2021,8 +2023,6 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
         if (an > maxNewNum) maxNewNum = an;
       }
     }
-    figma.currentPage.setPluginData("airMaxNum", String(maxNewNum));
-
     await updateSpecIndex();
     figma.notify("🔢 " + entries.length + "개 어노테이션 순서 변경");
     figma.ui.postMessage({ type: "reorder-done" });
@@ -2074,9 +2074,8 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
         figma.currentPage.children[i].remove();
       }
     }
-    // Clear hidden nums and max num cache
+    // Clear hidden nums
     setHiddenNums(new Set());
-    figma.currentPage.setPluginData("airMaxNum", "");
     figma.notify("🗑️ " + numArr.length + "개 어노테이션 전체 삭제 완료");
     figma.ui.postMessage({ type: "delete-all-done" });
   }

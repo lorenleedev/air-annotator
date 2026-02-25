@@ -709,7 +709,7 @@
       </button>
       <button class="list-btn" onclick="exportSpecs('md')" data-tip="Download as Markdown" data-i18n-tip="tip_md">MD</button>
       <button class="list-btn" onclick="exportSpecs('json')" data-tip="Download as JSON" data-i18n-tip="tip_json">JSON</button>
-      <button class="list-btn" onclick="rebuildIndex()" data-tip="Rebuild AI spec index" data-i18n-tip="tip_index">Index</button>
+      <button class="list-btn" id="btnRebuildIndex" onclick="rebuildIndex()" data-tip="Rebuild AI spec index" data-i18n-tip="tip_index">Index</button>
       <button class="list-btn" onclick="refreshList()" data-tip="Refresh list" data-i18n-tip="tip_refresh">↻</button>
     </div>
   </div>
@@ -906,7 +906,7 @@ function applyLang() {
   renderChips();
   // Update onboarding next/skip if visible
   var nb = document.getElementById("obNextBtn");
-  if (nb) nb.textContent = obSlide >= 3 ? (t.ob_done || "Got it") : (t.ob_next || "Next");
+  if (nb) nb.textContent = obSlide >= OB_TOTAL - 1 ? (t.ob_done || "Got it") : (t.ob_next || "Next");
 }
 
 function toggleLang() {
@@ -1081,9 +1081,8 @@ function applyViewMode() {
   var themeBtn = document.getElementById("themeBtn");
   if (themeBtn) themeBtn.style.display = "none";
   // Hide Index rebuild button
-  document.querySelectorAll(".list-btn").forEach(function(btn) {
-    if (btn.textContent === "Index" || btn.onclick === rebuildIndex) btn.style.display = "none";
-  });
+  var indexBtn = document.getElementById("btnRebuildIndex");
+  if (indexBtn) indexBtn.style.display = "none";
   // Hide delete-all button and batch bar
   var delAllBtn = document.getElementById("btnDeleteAll");
   if (delAllBtn) delAllBtn.style.display = "none";
@@ -1096,6 +1095,7 @@ var figmaFileKey = "";
 
 function exportSpecs(format) {
   if (!cachedSpecs || cachedSpecs.length === 0) return;
+  if (format !== "json" && format !== "md") return;
   var output = "", filename = "air-annotations", mime = "text/plain";
   var figmaLink = figmaFileKey ? "https://www.figma.com/design/" + figmaFileKey : "";
 
@@ -1128,6 +1128,7 @@ function exportSpecs(format) {
 }
 
 var selectedNums = new Set();
+var dragSrcNum = null;
 
 function showReorderLoading() {
   var t = I18N[currentLang];
@@ -1145,7 +1146,7 @@ function renderSpecList(specs) {
   container.innerHTML = "";
   if (!specs || specs.length === 0) { empty.style.display = "flex"; selectedNums.clear(); updateToggleAllBtn(); updateBatchBar(); return; }
   empty.style.display = "none";
-  var dragSrcNum = null;
+  dragSrcNum = null;
   for (var i = 0; i < specs.length; i++) {
     var s = specs[i], item = document.createElement("div");
     item.className = "spec-item" + (s.hidden ? " hidden" : "");
@@ -1313,6 +1314,7 @@ function showSelContent(name, meta, title, desc) {
 function saveDesc() {
   if (!currentNodeId) return;
   var btn = document.getElementById("btnSave");
+  if (btn.disabled) return;
   var t = I18N[currentLang];
   btn.textContent = t.btn_saving || "Saving...";
   btn.classList.add("btn-muted");
@@ -1504,6 +1506,12 @@ window.onmessage = function(e) {
     markClean();
     parent.postMessage({ pluginMessage: { type: "list-specs" } }, "*");
   }
+  if (msg.type === "write-error") {
+    var btn = document.getElementById("btnSave");
+    var t = I18N[currentLang];
+    btn.textContent = t.btn_save;
+    btn.disabled = false;
+  }
   if (msg.type === "batch-done") parent.postMessage({ pluginMessage: { type: "list-specs" } }, "*");
   if (msg.type === "delete-done") {
     clearDesc();
@@ -1561,7 +1569,8 @@ parent.postMessage({ pluginMessage: { type: "init" } }, "*");
 document.addEventListener("keydown", function(e) {
   if ((e.metaKey || e.ctrlKey) && e.key === "s") {
     e.preventDefault();
-    if (currentNodeId && !document.getElementById("btnSave").classList.contains("btn-muted")) {
+    var _sb = document.getElementById("btnSave");
+    if (currentNodeId && !_sb.disabled && !_sb.classList.contains("btn-muted")) {
       saveDesc();
     }
   }

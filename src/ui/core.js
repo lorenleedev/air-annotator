@@ -121,9 +121,8 @@ function applyViewMode() {
   var themeBtn = document.getElementById("themeBtn");
   if (themeBtn) themeBtn.style.display = "none";
   // Hide Index rebuild button
-  document.querySelectorAll(".list-btn").forEach(function(btn) {
-    if (btn.textContent === "Index" || btn.onclick === rebuildIndex) btn.style.display = "none";
-  });
+  var indexBtn = document.getElementById("btnRebuildIndex");
+  if (indexBtn) indexBtn.style.display = "none";
   // Hide delete-all button and batch bar
   var delAllBtn = document.getElementById("btnDeleteAll");
   if (delAllBtn) delAllBtn.style.display = "none";

@@ -21,7 +21,7 @@ function applyLang() {
   renderChips();
   // Update onboarding next/skip if visible
   var nb = document.getElementById("obNextBtn");
-  if (nb) nb.textContent = obSlide >= 3 ? (t.ob_done || "Got it") : (t.ob_next || "Next");
+  if (nb) nb.textContent = obSlide >= OB_TOTAL - 1 ? (t.ob_done || "Got it") : (t.ob_next || "Next");
 }
 
 function toggleLang() {

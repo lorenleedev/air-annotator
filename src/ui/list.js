@@ -1,4 +1,5 @@
 var selectedNums = new Set();
+var dragSrcNum = null;
 
 function showReorderLoading() {
   var t = I18N[currentLang];
@@ -16,7 +17,7 @@ function renderSpecList(specs) {
   container.innerHTML = "";
   if (!specs || specs.length === 0) { empty.style.display = "flex"; selectedNums.clear(); updateToggleAllBtn(); updateBatchBar(); return; }
   empty.style.display = "none";
-  var dragSrcNum = null;
+  dragSrcNum = null;
   for (var i = 0; i < specs.length; i++) {
     var s = specs[i], item = document.createElement("div");
     item.className = "spec-item" + (s.hidden ? " hidden" : "");
@@ -184,6 +185,7 @@ function showSelContent(name, meta, title, desc) {
 function saveDesc() {
   if (!currentNodeId) return;
   var btn = document.getElementById("btnSave");
+  if (btn.disabled) return;
   var t = I18N[currentLang];
   btn.textContent = t.btn_saving || "Saving...";
   btn.classList.add("btn-muted");

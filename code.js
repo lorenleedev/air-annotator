@@ -536,6 +536,10 @@
           }
         }
       }
+      if (!targetNodeId) {
+        const indexData = readHiddenData(String(num));
+        if (indexData && indexData.target) targetNodeId = indexData.target;
+      }
       for (let i = children.length - 1; i >= 0; i--) {
         const c = children[i];
         const n = c.name;
@@ -1127,8 +1131,6 @@
       let success = 0, fail = 0;
       const errors = [];
       const nextNum = getNextNum();
-      const maxBatchNum = nextNum + mappings.length - 1;
-      figma.currentPage.setPluginData("airMaxNum", String(maxBatchNum));
       for (let i = 0; i < mappings.length; i++) {
         const m = mappings[i];
         const num = nextNum + i;
@@ -1266,7 +1268,6 @@
         }
       });
       setHiddenNums(newHiddenNums);
-      figma.currentPage.setPluginData("airMaxNum", String(entries.length));
       yield updateSpecIndex();
     });
   }
@@ -1482,6 +1483,7 @@
         const node = yield figma.getNodeByIdAsync(msg.nodeId);
         if (!node) {
           figma.notify("❌ 노드를 찾을 수 없습니다.", { error: true });
+          figma.ui.postMessage({ type: "write-error" });
           return;
         }
         let existingNum = null;
@@ -1499,6 +1501,7 @@
           readSelectedDesc();
         } else {
           figma.notify("❌ " + result.error, { error: true });
+          figma.ui.postMessage({ type: "write-error" });
         }
       }
       if (msg.type === "apply-batch") {
@@ -1507,7 +1510,7 @@
         figma.notify(notice);
         figma.ui.postMessage({ type: "batch-done", result });
         figma.ui.postMessage({ type: "layers-scanned", layers: scanLayers(figma.currentPage, 0) });
-        updateSpecIndex();
+        yield updateSpecIndex();
       }
       if (msg.type === "select-node") {
         const node = yield figma.getNodeByIdAsync(msg.nodeId);
@@ -1545,6 +1548,7 @@
       if (msg.type === "rebuild-index") {
         yield updateSpecIndex();
         figma.notify("📑 AI용 스펙 인덱스를 최신 상태로 갱신했어요");
+        figma.ui.postMessage({ type: "rebuild-done" });
       }
       if (msg.type === "toggle-visibility") {
         const num = parseInt(msg.num);
@@ -1557,7 +1561,7 @@
         setHiddenNums(hiddenSet);
         yield setAnnotationVisibility(num, msg.visible);
         figma.ui.postMessage({ type: "visibility-changed", num: msg.num, visible: msg.visible });
-        updateSpecIndex();
+        yield updateSpecIndex();
       }
       if (msg.type === "set-all-visibility") {
         const allNums = [];
@@ -1629,7 +1633,7 @@
         const label = msg.visible ? "shown" : "hidden";
         figma.notify("👁️ " + allNums.length + " annotation(s) " + label);
         figma.ui.postMessage({ type: "all-visibility-changed", visible: msg.visible });
-        updateSpecIndex();
+        yield updateSpecIndex();
       }
       if (msg.type === "reorder-specs") {
         const order = msg.order;
@@ -1745,7 +1749,6 @@
             if (an > maxNewNum) maxNewNum = an;
           }
         }
-        figma.currentPage.setPluginData("airMaxNum", String(maxNewNum));
         yield updateSpecIndex();
         figma.notify("🔢 " + entries.length + "개 어노테이션 순서 변경");
         figma.ui.postMessage({ type: "reorder-done" });
@@ -1802,7 +1805,6 @@
           }
         }
         setHiddenNums(/* @__PURE__ */ new Set());
-        figma.currentPage.setPluginData("airMaxNum", "");
         figma.notify("🗑️ " + numArr.length + "개 어노테이션 전체 삭제 완료");
         figma.ui.postMessage({ type: "delete-all-done" });
       }
