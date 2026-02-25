@@ -718,10 +718,7 @@
         });
       }
       const hiddenNums = getHiddenNums();
-      const pendingFallback = [];
-      const foundNums = {};
-      const panelTargetCache = {};
-      const panelColorCache = {};
+      const panelDataMap = {};
       const pageChildren = figma.currentPage.children;
       for (let i = pageChildren.length - 1; i >= 0; i--) {
         const c = pageChildren[i];
@@ -738,20 +735,39 @@
             fpTarget = c.getPluginData("targetNodeId") || "";
           } catch (e) {
           }
-          if (fpTarget) {
-            panelTargetCache[fpnum] = fpTarget;
-            if (fpColor) panelColorCache[fpnum] = fpColor;
-            pendingFallback.push({ num: fpnum, fpDesc, fpColor, fpTarget });
+          if (fpTarget && !panelDataMap[fpnum]) {
+            panelDataMap[fpnum] = { desc: fpDesc, color: fpColor, target: fpTarget };
           }
           continue;
         }
       }
+      const allNums = /* @__PURE__ */ new Set();
+      indexMap.forEach(function(_data, num) {
+        allNums.add(num);
+      });
+      for (const pn in panelDataMap) allNums.add(pn);
       const specs = [];
       const pendingResolve = [];
-      indexMap.forEach(function(data, num) {
-        const targetNodeId = data.target || panelTargetCache[num] || "";
-        pendingResolve.push({ num, targetNodeId, title: data.title, desc: data.desc });
-        foundNums[num] = true;
+      allNums.forEach(function(num) {
+        const panel = panelDataMap[num];
+        const idx = indexMap.get(num);
+        if (panel) {
+          pendingResolve.push({
+            num,
+            targetNodeId: panel.target,
+            title: idx ? idx.title : "",
+            desc: panel.desc,
+            color: panel.color || (idx ? idx.color : "")
+          });
+        } else if (idx) {
+          pendingResolve.push({
+            num,
+            targetNodeId: idx.target,
+            title: idx.title,
+            desc: idx.desc,
+            color: idx.color
+          });
+        }
       });
       const resolvePromises = [];
       for (let i = 0; i < pendingResolve.length; i++) {
@@ -765,45 +781,20 @@
       for (let i = 0; i < pendingResolve.length; i++) {
         const pr = pendingResolve[i];
         const tNode = resolvedNodes[i];
+        let resolvedTitle = pr.title;
+        if (tNode) {
+          const tm = tNode.name.match(/^\[AIR-\d+\]\s*(.*?)(\s*\|.*)?$/);
+          if (tm) resolvedTitle = tm[1];
+        }
         specs.push({
           num: parseInt(pr.num),
-          title: pr.title,
+          title: resolvedTitle,
           desc: pr.desc,
+          color: pr.color,
           nodeId: pr.targetNodeId,
           nodeType: tNode ? tNode.type : "",
           nodeName: tNode ? tNode.name : ""
         });
-      }
-      const filteredFallback = [];
-      for (let i = 0; i < pendingFallback.length; i++) {
-        if (!foundNums[pendingFallback[i].num]) {
-          filteredFallback.push(pendingFallback[i]);
-        }
-      }
-      const fallbackNodePromises = [];
-      for (let i = 0; i < filteredFallback.length; i++) {
-        fallbackNodePromises.push(figma.getNodeByIdAsync(filteredFallback[i].fpTarget));
-      }
-      const fallbackResolvedNodes = yield Promise.all(fallbackNodePromises);
-      for (let i = 0; i < filteredFallback.length; i++) {
-        const fb = filteredFallback[i];
-        const fpNode = fallbackResolvedNodes[i];
-        let fpTitle = "", fpType = "", fpName = "";
-        if (fpNode) {
-          const fptm = fpNode.name.match(/^\[AIR-\d+\]\s*(.*?)(\s*\|.*)?$/);
-          fpTitle = fptm ? fptm[1] : fpNode.name;
-          fpType = fpNode.type;
-          fpName = fpNode.name;
-        }
-        specs.push({
-          num: parseInt(fb.num),
-          title: fpTitle,
-          desc: fb.fpDesc,
-          nodeId: fb.fpTarget,
-          nodeType: fpType,
-          nodeName: fpName
-        });
-        foundNums[fb.num] = true;
       }
       if (specs.length === 0) {
         if (existingIdx) existingIdx.remove();
@@ -829,11 +820,7 @@
         if (hiddenNums.has(sp.num)) header += "  [HIDDEN]";
         lines.push(header);
         lines.push("title: " + sp.title);
-        let specColor = "";
-        const hd = indexMap.get(String(sp.num));
-        if (hd) specColor = hd.color;
-        if (!specColor) specColor = panelColorCache[String(sp.num)] || "";
-        lines.push("color: " + specColor);
+        lines.push("color: " + sp.color);
         lines.push("target: " + sp.nodeId);
         lines.push("===");
         if (sp.desc) {

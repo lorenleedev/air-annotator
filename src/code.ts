@@ -79,6 +79,7 @@ interface SpecInfo {
   num: number;
   title: string;
   desc: string;
+  color: string;
   nodeId: string;
   nodeType: string;
   nodeName: string;
@@ -833,18 +834,13 @@ async function updateSpecIndex(excludeNums?: Set<string>): Promise<void> {
   }
   const hiddenNums: Set<number> = getHiddenNums();
 
-  // 2단계: 패널 pluginData 수집 (보충 데이터)
-  interface PendingFallback {
-    num: string;
-    fpDesc: string;
-    fpColor: string;
-    fpTarget: string;
+  // 2단계: 패널 pluginData 수집 (패널이 있으면 최신 데이터)
+  interface PanelInfo {
+    desc: string;
+    color: string;
+    target: string;
   }
-
-  const pendingFallback: PendingFallback[] = [];
-  const foundNums: Record<string, boolean> = {};
-  const panelTargetCache: Record<string, string> = {};
-  const panelColorCache: Record<string, string> = {};
+  const panelDataMap: Record<string, PanelInfo> = {};
 
   const pageChildren: readonly SceneNode[] = figma.currentPage.children;
   for (let i = pageChildren.length - 1; i >= 0; i--) {
@@ -860,29 +856,49 @@ async function updateSpecIndex(excludeNums?: Set<string>): Promise<void> {
         fpColor = c.getPluginData("markerColor") || "";
         fpTarget = c.getPluginData("targetNodeId") || "";
       } catch(e) {}
-      if (fpTarget) {
-        panelTargetCache[fpnum] = fpTarget;
-        if (fpColor) panelColorCache[fpnum] = fpColor;
-        pendingFallback.push({ num: fpnum, fpDesc: fpDesc, fpColor: fpColor, fpTarget: fpTarget });
+      if (fpTarget && !panelDataMap[fpnum]) {
+        panelDataMap[fpnum] = { desc: fpDesc, color: fpColor, target: fpTarget };
       }
       continue;
     }
   }
 
-  // 3단계: 인덱스 데이터 (primary) → specs 수집
-  const specs: SpecInfo[] = [];
+  // 3단계: 병합 — 패널 존재 시 패널 우선(최신), 없으면 인덱스(보존)
+  const allNums: Set<string> = new Set();
+  indexMap.forEach(function(_data: HiddenData, num: string) { allNums.add(num); });
+  for (const pn in panelDataMap) allNums.add(pn);
 
+  const specs: SpecInfo[] = [];
   interface PendingResolve {
     num: string;
     targetNodeId: string;
     title: string;
     desc: string;
+    color: string;
   }
   const pendingResolve: PendingResolve[] = [];
-  indexMap.forEach(function(data: HiddenData, num: string) {
-    const targetNodeId: string = data.target || panelTargetCache[num] || "";
-    pendingResolve.push({ num: num, targetNodeId: targetNodeId, title: data.title, desc: data.desc });
-    foundNums[num] = true;
+  allNums.forEach(function(num: string) {
+    const panel: PanelInfo | undefined = panelDataMap[num];
+    const idx: HiddenData | undefined = indexMap.get(num);
+    if (panel) {
+      // 패널 존재 → 패널 데이터가 최신 (writeSpec이 방금 업데이트)
+      pendingResolve.push({
+        num: num,
+        targetNodeId: panel.target,
+        title: idx ? idx.title : "",
+        desc: panel.desc,
+        color: panel.color || (idx ? idx.color : "")
+      });
+    } else if (idx) {
+      // 패널 없음 → 인덱스 데이터 보존 (수동 삭제된 패널)
+      pendingResolve.push({
+        num: num,
+        targetNodeId: idx.target,
+        title: idx.title,
+        desc: idx.desc,
+        color: idx.color
+      });
+    }
   });
 
   // targetNodeId 일괄 병렬 resolve
@@ -899,49 +915,21 @@ async function updateSpecIndex(excludeNums?: Set<string>): Promise<void> {
   for (let i = 0; i < pendingResolve.length; i++) {
     const pr: PendingResolve = pendingResolve[i];
     const tNode: BaseNode | null = resolvedNodes[i];
+    // title: 타겟 노드에서 추출 (최신), 없으면 인덱스 title
+    let resolvedTitle: string = pr.title;
+    if (tNode) {
+      const tm: RegExpMatchArray | null = tNode.name.match(/^\[AIR-\d+\]\s*(.*?)(\s*\|.*)?$/);
+      if (tm) resolvedTitle = tm[1];
+    }
     specs.push({
       num: parseInt(pr.num),
-      title: pr.title,
+      title: resolvedTitle,
       desc: pr.desc,
+      color: pr.color,
       nodeId: pr.targetNodeId,
       nodeType: tNode ? tNode.type : "",
       nodeName: tNode ? tNode.name : ""
     });
-  }
-
-  // 4단계: 패널 pluginData 보충 → 인덱스에 없는 것만 추가
-  const filteredFallback: PendingFallback[] = [];
-  for (let i = 0; i < pendingFallback.length; i++) {
-    if (!foundNums[pendingFallback[i].num]) {
-      filteredFallback.push(pendingFallback[i]);
-    }
-  }
-
-  const fallbackNodePromises: Array<Promise<BaseNode | null>> = [];
-  for (let i = 0; i < filteredFallback.length; i++) {
-    fallbackNodePromises.push(figma.getNodeByIdAsync(filteredFallback[i].fpTarget));
-  }
-  const fallbackResolvedNodes: Array<BaseNode | null> = await Promise.all(fallbackNodePromises);
-
-  for (let i = 0; i < filteredFallback.length; i++) {
-    const fb: PendingFallback = filteredFallback[i];
-    const fpNode: BaseNode | null = fallbackResolvedNodes[i];
-    let fpTitle: string = "", fpType: string = "", fpName: string = "";
-    if (fpNode) {
-      const fptm: RegExpMatchArray | null = fpNode.name.match(/^\[AIR-\d+\]\s*(.*?)(\s*\|.*)?$/);
-      fpTitle = fptm ? fptm[1] : fpNode.name;
-      fpType = fpNode.type;
-      fpName = fpNode.name;
-    }
-    specs.push({
-      num: parseInt(fb.num),
-      title: fpTitle,
-      desc: fb.fpDesc,
-      nodeId: fb.fpTarget,
-      nodeType: fpType,
-      nodeName: fpName
-    });
-    foundNums[fb.num] = true;
   }
 
   if (specs.length === 0) {
@@ -969,12 +957,7 @@ async function updateSpecIndex(excludeNums?: Set<string>): Promise<void> {
     if (hiddenNums.has(sp.num)) header += "  [HIDDEN]";
     lines.push(header);
     lines.push("title: " + sp.title);
-    // Find color from index (primary) or cached panel data (fallback)
-    let specColor: string = "";
-    const hd: HiddenData | undefined = indexMap.get(String(sp.num));
-    if (hd) specColor = hd.color;
-    if (!specColor) specColor = panelColorCache[String(sp.num)] || "";
-    lines.push("color: " + specColor);
+    lines.push("color: " + sp.color);
     lines.push("target: " + sp.nodeId);
     lines.push("===");
     if (sp.desc) {
