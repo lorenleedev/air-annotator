@@ -436,7 +436,7 @@ function createSpecPanel(title: string, desc: string, num: string | number, targ
   header.paddingLeft = 18; header.paddingRight = 18;
   header.fills = [];
   header.layoutAlign = "STRETCH";
-  header.primaryAxisSizingMode = "AUTO";
+  header.primaryAxisSizingMode = "FIXED";
   header.counterAxisSizingMode = "AUTO";
   header.counterAxisAlignItems = "MIN";
 
@@ -454,7 +454,12 @@ function createSpecPanel(title: string, desc: string, num: string | number, targ
   numBadge.appendChild(numText);
   header.appendChild(numBadge);
 
-  // Title + subtitle as single TextNode
+  // Title + subtitle wrapped in a fill-container frame
+  const titleWrap: FrameNode = alFrame("titleWrap", "VERTICAL", 0, 0);
+  titleWrap.layoutGrow = 1;
+  titleWrap.counterAxisSizingMode = "AUTO";
+  titleWrap.fills = [];
+
   const headerLabel: string = title || "Annotation";
   const now: Date = new Date();
   const pad = function(n: number): string { return n < 10 ? "0" + n : String(n); };
@@ -468,13 +473,15 @@ function createSpecPanel(title: string, desc: string, num: string | number, targ
   titleNode.characters = titleFull;
   titleNode.fontSize = 13;
   titleNode.fills = [{ type: "SOLID", color: th.title }];
-  titleNode.textAutoResize = "WIDTH_AND_HEIGHT";
+  titleNode.layoutAlign = "STRETCH";
+  titleNode.textAutoResize = "HEIGHT";
   titleNode.paragraphSpacing = 2;
   const subStart: number = headerLabel.length + 1;
   if (FONT_R) titleNode.setRangeFontName(subStart, titleFull.length, FONT_R);
   titleNode.setRangeFontSize(subStart, titleFull.length, 10);
   titleNode.setRangeFills(subStart, titleFull.length, [{ type: "SOLID", color: th.subtitle }]);
-  header.appendChild(titleNode);
+  titleWrap.appendChild(titleNode);
+  header.appendChild(titleWrap);
   panel.appendChild(header);
 
   // ── Body ──

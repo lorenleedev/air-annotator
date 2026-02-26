@@ -343,7 +343,7 @@
     header.paddingRight = 18;
     header.fills = [];
     header.layoutAlign = "STRETCH";
-    header.primaryAxisSizingMode = "AUTO";
+    header.primaryAxisSizingMode = "FIXED";
     header.counterAxisSizingMode = "AUTO";
     header.counterAxisAlignItems = "MIN";
     const numBadge = alFrame("numBadge", "HORIZONTAL", 0, 0);
@@ -360,6 +360,10 @@
     const numText = txt(String(num), 9, { r: 1, g: 1, b: 1 }, true);
     numBadge.appendChild(numText);
     header.appendChild(numBadge);
+    const titleWrap = alFrame("titleWrap", "VERTICAL", 0, 0);
+    titleWrap.layoutGrow = 1;
+    titleWrap.counterAxisSizingMode = "AUTO";
+    titleWrap.fills = [];
     const headerLabel = title || "Annotation";
     const now = /* @__PURE__ */ new Date();
     const pad = function(n) {
@@ -375,13 +379,15 @@
     titleNode.characters = titleFull;
     titleNode.fontSize = 13;
     titleNode.fills = [{ type: "SOLID", color: th.title }];
-    titleNode.textAutoResize = "WIDTH_AND_HEIGHT";
+    titleNode.layoutAlign = "STRETCH";
+    titleNode.textAutoResize = "HEIGHT";
     titleNode.paragraphSpacing = 2;
     const subStart = headerLabel.length + 1;
     if (FONT_R) titleNode.setRangeFontName(subStart, titleFull.length, FONT_R);
     titleNode.setRangeFontSize(subStart, titleFull.length, 10);
     titleNode.setRangeFills(subStart, titleFull.length, [{ type: "SOLID", color: th.subtitle }]);
-    header.appendChild(titleNode);
+    titleWrap.appendChild(titleNode);
+    header.appendChild(titleWrap);
     panel.appendChild(header);
     const body = alFrame("body", "VERTICAL", 0, 10);
     body.paddingTop = 0;
