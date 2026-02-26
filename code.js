@@ -318,7 +318,7 @@
   }
   function createSpecPanel(title, desc, num, targetNode, markerColor) {
     const parsed = parseTags(desc);
-    const headerColor = markerColor || CLR.headerBg;
+    const headerColor = markerColor || hexToRgb(DEFAULT_MARKER_HEX);
     const th = getTheme();
     const panel = alFrame("📋 Annotation: " + num, "VERTICAL", 0, 0);
     panel.resize(PANEL_W, 10);
@@ -509,13 +509,22 @@
   }
   function getNextNum() {
     let max = 0;
-    const children = figma.currentPage.children;
-    for (let i = 0; i < children.length; i++) {
-      const c = children[i];
-      const m = c.name.match(/^\[AIR-(\d+)\]/) || c.name.match(/^📋 Annotation: (\d+)/) || c.name.match(/^🏷️ (\d+)/);
+    function checkName(name) {
+      const m = name.match(/^\[AIR-(\d+)\]/) || name.match(/^📋 Annotation: (\d+)/) || name.match(/^🏷️ (\d+)/) || name.match(/^📌 AIR-(\d+)/);
       if (m) {
         const n = parseInt(m[1]);
         if (n > max) max = n;
+      }
+    }
+    const children = figma.currentPage.children;
+    for (let i = 0; i < children.length; i++) {
+      const c = children[i];
+      checkName(c.name);
+      if (c.name === PARENT_GROUP_NAME && c.type === "GROUP") {
+        const grp = c;
+        for (let j = 0; j < grp.children.length; j++) {
+          checkName(grp.children[j].name);
+        }
       }
     }
     const next = max + 1;
@@ -524,15 +533,39 @@
   function removeExistingArtifacts(num) {
     return __async(this, null, function* () {
       const panelName = "📋 Annotation: " + num;
-      const markerName = "🏷️ " + num;
+      const markerName = "🏷️ " + num + " [AIR]";
+      const legacyMarkerName = "🏷️ " + num;
+      const annotGroup = findAnnotationGroup(num);
       let targetNodeId = "";
+      if (annotGroup) {
+        for (let i = 0; i < annotGroup.children.length; i++) {
+          const gc = annotGroup.children[i];
+          if (gc.name === panelName) {
+            try {
+              targetNodeId = gc.getPluginData("targetNodeId") || "";
+            } catch (e) {
+            }
+          }
+        }
+        const parentGroup = findParentGroup();
+        annotGroup.remove();
+        try {
+          if (parentGroup && parentGroup.parent && parentGroup.children.length === 0) {
+            parentGroup.remove();
+          }
+        } catch (e) {
+        }
+      }
       const children = figma.currentPage.children;
-      for (let i = 0; i < children.length; i++) {
-        const c = children[i];
-        if (!targetNodeId && c.name === panelName) {
-          try {
-            targetNodeId = c.getPluginData("targetNodeId") || "";
-          } catch (e) {
+      if (!targetNodeId) {
+        for (let i = 0; i < children.length; i++) {
+          const c = children[i];
+          if (c.name === panelName) {
+            try {
+              targetNodeId = c.getPluginData("targetNodeId") || "";
+            } catch (e) {
+            }
+            break;
           }
         }
       }
@@ -543,7 +576,7 @@
       for (let i = children.length - 1; i >= 0; i--) {
         const c = children[i];
         const n = c.name;
-        if (n === panelName || n === markerName) {
+        if (n === panelName || n === markerName || n === legacyMarkerName) {
           c.remove();
         }
       }
@@ -553,7 +586,7 @@
           const tChildren = targetNode.children;
           for (let k = tChildren.length - 1; k >= 0; k--) {
             const tc = tChildren[k];
-            if (tc.name === markerName) {
+            if (tc.name === markerName || tc.name === legacyMarkerName) {
               tc.remove();
             }
           }
@@ -562,6 +595,56 @@
     });
   }
   var INDEX_NAME = "📑 AIR: AI-Readable Annotator Index";
+  var PARENT_GROUP_NAME = "📌 AIR Annotations";
+  var ANNOT_GROUP_PREFIX = "📌 AIR-";
+  var DEFAULT_MARKER_HEX = "#F24E1E";
+  function findParentGroup() {
+    const children = figma.currentPage.children;
+    for (let i = 0; i < children.length; i++) {
+      if (children[i].name === PARENT_GROUP_NAME && children[i].type === "GROUP") {
+        return children[i];
+      }
+    }
+    return null;
+  }
+  function findAnnotationGroup(num) {
+    const groupName = ANNOT_GROUP_PREFIX + num;
+    const pg = findParentGroup();
+    if (pg) {
+      for (let i = 0; i < pg.children.length; i++) {
+        if (pg.children[i].name === groupName && pg.children[i].type === "GROUP") {
+          return pg.children[i];
+        }
+      }
+    }
+    const children = figma.currentPage.children;
+    for (let i = 0; i < children.length; i++) {
+      if (children[i].name === groupName && children[i].type === "GROUP") {
+        return children[i];
+      }
+    }
+    return null;
+  }
+  function groupAnnotationArtifacts(panel, marker, num) {
+    const groupName = ANNOT_GROUP_PREFIX + num;
+    const annotGroup = figma.group([marker, panel], figma.currentPage);
+    annotGroup.name = groupName;
+    let pg = findParentGroup();
+    if (pg) {
+      pg.appendChild(annotGroup);
+    } else {
+      const groupChildren = [annotGroup];
+      const children = figma.currentPage.children;
+      for (let i = 0; i < children.length; i++) {
+        if (children[i].name === INDEX_NAME) {
+          groupChildren.push(children[i]);
+          break;
+        }
+      }
+      pg = figma.group(groupChildren, figma.currentPage);
+      pg.name = PARENT_GROUP_NAME;
+    }
+  }
   function readHiddenData(num) {
     const indexMap = readIndexMap();
     const fromIndex = indexMap.get(String(num));
@@ -638,17 +721,29 @@
     return map;
   }
   function readIndexMap() {
-    const children = figma.currentPage.children;
-    for (let i = 0; i < children.length; i++) {
-      const c = children[i];
-      if (c.name === INDEX_NAME && "children" in c) {
-        const frame = c;
+    function tryReadIndex(node) {
+      if (node.name === INDEX_NAME && "children" in node) {
+        const frame = node;
         for (let j = 0; j < frame.children.length; j++) {
           if (frame.children[j].type === "TEXT") {
             const content = frame.children[j].characters || "";
             const map = parseIndexText(content);
             if (map.size > 0) return map;
           }
+        }
+      }
+      return null;
+    }
+    const children = figma.currentPage.children;
+    for (let i = 0; i < children.length; i++) {
+      const c = children[i];
+      const result = tryReadIndex(c);
+      if (result) return result;
+      if (c.name === PARENT_GROUP_NAME && c.type === "GROUP") {
+        const grp = c;
+        for (let j = 0; j < grp.children.length; j++) {
+          const gr = tryReadIndex(grp.children[j]);
+          if (gr) return gr;
         }
       }
     }
@@ -678,7 +773,12 @@
   function setAnnotationVisibility(num, isVisible) {
     return __async(this, null, function* () {
       const panelName = "📋 Annotation: " + num;
-      const markerName = "🏷️ " + num;
+      const markerName = "🏷️ " + num + " [AIR]";
+      const annotGroup = findAnnotationGroup(num);
+      if (annotGroup) {
+        annotGroup.visible = isVisible;
+        return;
+      }
       let targetNodeId = "";
       let foundPanel = false;
       let foundMarker = false;
@@ -717,25 +817,32 @@
       let existingIdx = null;
       let existingTxt = null;
       let indexMap = /* @__PURE__ */ new Map();
-      for (let ri = figma.currentPage.children.length - 1; ri >= 0; ri--) {
-        const rc = figma.currentPage.children[ri];
-        if (rc.name === INDEX_NAME) {
-          if (!existingIdx && "children" in rc) {
-            const idxFrame = rc;
-            for (let ti = 0; ti < idxFrame.children.length; ti++) {
-              if (idxFrame.children[ti].type === "TEXT") {
-                existingIdx = idxFrame;
-                existingTxt = idxFrame.children[ti];
-                const indexContent = existingTxt.characters || "";
-                indexMap = parseIndexText(indexContent);
-                break;
+      const idxSearchSources = [figma.currentPage.children];
+      const idxPg = findParentGroup();
+      if (idxPg) idxSearchSources.push(idxPg.children);
+      for (let si = 0; si < idxSearchSources.length; si++) {
+        const searchChildren = idxSearchSources[si];
+        for (let ri = searchChildren.length - 1; ri >= 0; ri--) {
+          const rc = searchChildren[ri];
+          if (rc.name === INDEX_NAME) {
+            if (!existingIdx && "children" in rc) {
+              const idxFrame = rc;
+              for (let ti = 0; ti < idxFrame.children.length; ti++) {
+                if (idxFrame.children[ti].type === "TEXT") {
+                  existingIdx = idxFrame;
+                  existingTxt = idxFrame.children[ti];
+                  const indexContent = existingTxt.characters || "";
+                  indexMap = parseIndexText(indexContent);
+                  break;
+                }
               }
+              if (!existingTxt) rc.remove();
+            } else {
+              rc.remove();
             }
-            if (!existingTxt) rc.remove();
-          } else {
-            rc.remove();
           }
         }
+        if (existingIdx) break;
       }
       if (excludeNums) {
         excludeNums.forEach(function(n) {
@@ -744,26 +851,38 @@
       }
       const hiddenNums = getHiddenNums();
       const panelDataMap = {};
-      const pageChildren = figma.currentPage.children;
-      for (let i = pageChildren.length - 1; i >= 0; i--) {
-        const c = pageChildren[i];
-        if (c.name === INDEX_NAME) {
-          continue;
-        }
-        const fpMatch = c.name.match(/^📋 Annotation: (\d+)/);
+      function collectPanelData(node) {
+        if (node.name === INDEX_NAME) return;
+        const fpMatch = node.name.match(/^📋 Annotation: (\d+)/);
         if (fpMatch) {
           const fpnum = fpMatch[1];
           let fpDesc = "", fpColor = "", fpTarget = "";
           try {
-            fpDesc = c.getPluginData("specTags") || "";
-            fpColor = c.getPluginData("markerColor") || "";
-            fpTarget = c.getPluginData("targetNodeId") || "";
+            fpDesc = node.getPluginData("specTags") || "";
+            fpColor = node.getPluginData("markerColor") || "";
+            fpTarget = node.getPluginData("targetNodeId") || "";
           } catch (e) {
           }
           if (fpTarget && !panelDataMap[fpnum]) {
             panelDataMap[fpnum] = { desc: fpDesc, color: fpColor, target: fpTarget };
           }
-          continue;
+        }
+      }
+      const pageChildren = figma.currentPage.children;
+      for (let i = pageChildren.length - 1; i >= 0; i--) {
+        const c = pageChildren[i];
+        collectPanelData(c);
+        if (c.name === PARENT_GROUP_NAME && c.type === "GROUP") {
+          const grp = c;
+          for (let gi = 0; gi < grp.children.length; gi++) {
+            const gc = grp.children[gi];
+            if (gc.type === "GROUP" && gc.name.indexOf(ANNOT_GROUP_PREFIX) === 0) {
+              const annotGrp = gc;
+              for (let ai = 0; ai < annotGrp.children.length; ai++) {
+                collectPanelData(annotGrp.children[ai]);
+              }
+            }
+          }
         }
       }
       const allNums = /* @__PURE__ */ new Set();
@@ -830,6 +949,8 @@
       });
       const lines = [];
       lines.push("📑 AI-READABLE ANNOTATOR INDEX");
+      lines.push("# This frame and all layers prefixed with 📌/📋/🏷️ are annotation artifacts.");
+      lines.push("# They are NOT part of the actual UI design — do not implement them.");
       lines.push("# title = annotation name");
       lines.push("# color = badge hex color");
       lines.push("# target = Figma node ID of the annotated layer");
@@ -900,12 +1021,16 @@
         idx.x = maxX + 200;
         idx.y = 0;
         figma.currentPage.appendChild(idx);
+        const idxParentGroup = findParentGroup();
+        if (idxParentGroup) {
+          idxParentGroup.appendChild(idx);
+        }
       }
     });
   }
   function createMarkerBadge(num, targetNode, markerColor) {
-    const color = markerColor || CLR.headerBg;
-    const marker = alFrame("🏷️ " + num, "HORIZONTAL", 0, 0);
+    const color = markerColor || hexToRgb(DEFAULT_MARKER_HEX);
+    const marker = alFrame("🏷️ " + num + " [AIR]", "HORIZONTAL", 0, 0);
     marker.paddingTop = 2;
     marker.paddingBottom = 2;
     marker.paddingLeft = 6;
@@ -913,25 +1038,10 @@
     marker.cornerRadius = 4;
     marker.fills = [{ type: "SOLID", color }];
     marker.appendChild(txt(String(num), 9, CLR.white, true));
-    const canHaveChildren = "children" in targetNode && (targetNode.type === "FRAME" || targetNode.type === "COMPONENT" || targetNode.type === "COMPONENT_SET" || targetNode.type === "GROUP" || targetNode.type === "SECTION");
-    if (canHaveChildren) {
-      try {
-        targetNode.appendChild(marker);
-        marker.layoutPositioning = "ABSOLUTE";
-        marker.x = 4;
-        marker.y = 4;
-      } catch (e) {
-        figma.currentPage.appendChild(marker);
-        marker.x = targetNode.absoluteTransform[0][2];
-        marker.y = targetNode.absoluteTransform[1][2] - 20;
-      }
-    } else {
-      figma.currentPage.appendChild(marker);
-      marker.x = targetNode.absoluteTransform[0][2];
-      marker.y = targetNode.absoluteTransform[1][2] - 20;
-    }
+    figma.currentPage.appendChild(marker);
+    marker.x = targetNode.absoluteTransform[0][2];
+    marker.y = targetNode.absoluteTransform[1][2] - 20;
     marker.setRelaunchData({ edit: "" });
-    marker.locked = true;
     return marker;
   }
   function scanLayers(node, depth) {
@@ -943,6 +1053,7 @@
       if (child.name.indexOf("📋 Annotation:") === 0) continue;
       if (child.name.indexOf("📑 AIR:") === 0) continue;
       if (child.name.indexOf("🏷️") === 0) continue;
+      if (child.name.indexOf("📌 AIR") === 0) continue;
       if (child.type === "PAGE" || child.type === "DOCUMENT") continue;
       results.push({ id: child.id, name: child.name, type: child.type, depth });
       if ("children" in child && child.type !== "INSTANCE") {
@@ -1050,15 +1161,32 @@
           color = hidden.color;
         } else {
           const panelName = "📋 Annotation: " + num;
-          for (let i = 0; i < figma.currentPage.children.length; i++) {
-            const cin = figma.currentPage.children[i].name;
-            if (cin === panelName) {
-              try {
-                desc = figma.currentPage.children[i].getPluginData("specTags") || "";
-                color = figma.currentPage.children[i].getPluginData("markerColor") || "";
-              } catch (e) {
+          const rdAnnotGrp = findAnnotationGroup(num);
+          let rdFound = false;
+          if (rdAnnotGrp) {
+            for (let rdi = 0; rdi < rdAnnotGrp.children.length; rdi++) {
+              if (rdAnnotGrp.children[rdi].name === panelName) {
+                try {
+                  desc = rdAnnotGrp.children[rdi].getPluginData("specTags") || "";
+                  color = rdAnnotGrp.children[rdi].getPluginData("markerColor") || "";
+                } catch (e) {
+                }
+                rdFound = true;
+                break;
               }
-              break;
+            }
+          }
+          if (!rdFound) {
+            for (let i = 0; i < figma.currentPage.children.length; i++) {
+              const cin = figma.currentPage.children[i].name;
+              if (cin === panelName) {
+                try {
+                  desc = figma.currentPage.children[i].getPluginData("specTags") || "";
+                  color = figma.currentPage.children[i].getPluginData("markerColor") || "";
+                } catch (e) {
+                }
+                break;
+              }
             }
           }
         }
@@ -1078,7 +1206,8 @@
   function writeSpec(node, title, desc, num, colorHex) {
     return __async(this, null, function* () {
       const nodeId = node.id;
-      const markerColor = colorHex ? hexToRgb(colorHex) : CLR.headerBg;
+      if (!colorHex) colorHex = DEFAULT_MARKER_HEX;
+      const markerColor = hexToRgb(colorHex);
       try {
         let currentNum = num;
         if (!currentNum) {
@@ -1094,7 +1223,24 @@
         if (!currentNum) return { ok: false, error: "번호가 없습니다." };
         let existingPos = null;
         const panelName = "📋 Annotation: " + currentNum;
-        const markerName = "🏷️ " + currentNum;
+        const markerName = "🏷️ " + currentNum + " [AIR]";
+        const wsLegacyMarker = "🏷️ " + currentNum;
+        const wsAnnotGroup = findAnnotationGroup(currentNum);
+        if (wsAnnotGroup) {
+          for (let wgi = 0; wgi < wsAnnotGroup.children.length; wgi++) {
+            if (wsAnnotGroup.children[wgi].name === panelName) {
+              if (!existingPos) existingPos = { x: wsAnnotGroup.children[wgi].x, y: wsAnnotGroup.children[wgi].y };
+            }
+          }
+          const wsParentGroup = findParentGroup();
+          wsAnnotGroup.remove();
+          try {
+            if (wsParentGroup && wsParentGroup.parent && wsParentGroup.children.length === 0) {
+              wsParentGroup.remove();
+            }
+          } catch (e) {
+          }
+        }
         const wChildren = figma.currentPage.children;
         for (let wi = wChildren.length - 1; wi >= 0; wi--) {
           const wc = wChildren[wi];
@@ -1102,14 +1248,14 @@
           if (wn === panelName) {
             if (!existingPos) existingPos = { x: wc.x, y: wc.y };
             wc.remove();
-          } else if (wn === markerName) {
+          } else if (wn === markerName || wn === wsLegacyMarker) {
             wc.remove();
           }
         }
         if ("children" in node) {
           const tChildren = node.children;
           for (let tk = tChildren.length - 1; tk >= 0; tk--) {
-            if (tChildren[tk].name === markerName) tChildren[tk].remove();
+            if (tChildren[tk].name === markerName || tChildren[tk].name === wsLegacyMarker) tChildren[tk].remove();
           }
         }
         if (!desc || !desc.trim()) {
@@ -1122,14 +1268,15 @@
           panel.x = existingPos.x;
           panel.y = existingPos.y;
         }
-        createMarkerBadge(currentNum, node, markerColor);
+        const wsMarker = createMarkerBadge(currentNum, node, markerColor);
         panel.setPluginData("specTags", desc);
         panel.setPluginData("targetNodeId", nodeId);
-        panel.setPluginData("markerColor", colorHex || "");
+        panel.setPluginData("markerColor", colorHex);
         panel.setRelaunchData({ edit: "" });
         for (let ci = 0; ci < panel.children.length; ci++) {
           panel.children[ci].locked = true;
         }
+        groupAnnotationArtifacts(panel, wsMarker, currentNum);
         node.setRelaunchData({ edit: "" });
         const writeHiddenSet = getHiddenNums();
         if (writeHiddenSet.has(parseInt(currentNum))) {
@@ -1169,10 +1316,32 @@
   function renumberAllSpecs() {
     return __async(this, null, function* () {
       const currentNums = [];
+      const rnSeen = {};
+      function collectRnNum(node) {
+        const m = node.name.match(/^📋 Annotation: (\d+)/);
+        if (m) {
+          const n = parseInt(m[1]);
+          if (!rnSeen[n]) {
+            currentNums.push(n);
+            rnSeen[n] = true;
+          }
+        }
+      }
       const children = figma.currentPage.children;
       for (let i = 0; i < children.length; i++) {
-        const m = children[i].name.match(/^📋 Annotation: (\d+)/);
-        if (m) currentNums.push(parseInt(m[1]));
+        collectRnNum(children[i]);
+        if (children[i].name === PARENT_GROUP_NAME && children[i].type === "GROUP") {
+          const rnGrp = children[i];
+          for (let gi = 0; gi < rnGrp.children.length; gi++) {
+            const rgc = rnGrp.children[gi];
+            if (rgc.type === "GROUP" && rgc.name.indexOf(ANNOT_GROUP_PREFIX) === 0) {
+              const ag = rgc;
+              for (let ai = 0; ai < ag.children.length; ai++) {
+                collectRnNum(ag.children[ai]);
+              }
+            }
+          }
+        }
       }
       currentNums.sort(function(a, b) {
         return a - b;
@@ -1200,13 +1369,19 @@
         const newNum = oldToNew[oldNum];
         let data = reorderHiddenMap.get(oldNum) || null;
         if (!data) {
-          for (let ci = 0; ci < rnChildren.length; ci++) {
-            const cn = rnChildren[ci].name;
+          const rnAnnotGrp = findAnnotationGroup(oldNum);
+          const rnSearchNodes = [];
+          if (rnAnnotGrp) {
+            for (let ai = 0; ai < rnAnnotGrp.children.length; ai++) rnSearchNodes.push(rnAnnotGrp.children[ai]);
+          }
+          for (let ci = 0; ci < rnChildren.length; ci++) rnSearchNodes.push(rnChildren[ci]);
+          for (let ci = 0; ci < rnSearchNodes.length; ci++) {
+            const cn = rnSearchNodes[ci].name;
             if (cn === "📋 Annotation: " + oldNum) {
               try {
-                const pd = rnChildren[ci].getPluginData("specTags") || "";
-                const pc = rnChildren[ci].getPluginData("markerColor") || "";
-                const pt = rnChildren[ci].getPluginData("targetNodeId") || "";
+                const pd = rnSearchNodes[ci].getPluginData("specTags") || "";
+                const pc = rnSearchNodes[ci].getPluginData("markerColor") || "";
+                const pt = rnSearchNodes[ci].getPluginData("targetNodeId") || "";
                 let pTitle = "";
                 if (pt) {
                   const tn = yield figma.getNodeByIdAsync(pt);
@@ -1224,11 +1399,22 @@
         }
         if (!data || !data.target) continue;
         let panelPos = null;
-        for (let ci = 0; ci < rnChildren.length; ci++) {
-          const cn = rnChildren[ci].name;
-          if (cn === "📋 Annotation: " + oldNum) {
-            panelPos = { x: rnChildren[ci].x, y: rnChildren[ci].y };
-            break;
+        const rnPanelGrp = findAnnotationGroup(oldNum);
+        if (rnPanelGrp) {
+          for (let ai = 0; ai < rnPanelGrp.children.length; ai++) {
+            if (rnPanelGrp.children[ai].name === "📋 Annotation: " + oldNum) {
+              panelPos = { x: rnPanelGrp.children[ai].x, y: rnPanelGrp.children[ai].y };
+              break;
+            }
+          }
+        }
+        if (!panelPos) {
+          for (let ci = 0; ci < rnChildren.length; ci++) {
+            const cn = rnChildren[ci].name;
+            if (cn === "📋 Annotation: " + oldNum) {
+              panelPos = { x: rnChildren[ci].x, y: rnChildren[ci].y };
+              break;
+            }
           }
         }
         entries.push({
@@ -1251,7 +1437,7 @@
         const tNode = yield figma.getNodeByIdAsync(entry.data.target);
         if (!tNode) continue;
         const newNumStr = String(entry.newNum);
-        const mColor = entry.data.color ? hexToRgb(entry.data.color) : CLR.headerBg;
+        const mColor = hexToRgb(entry.data.color || DEFAULT_MARKER_HEX);
         const summary = makeSummary(entry.data.desc);
         const displayTitle = entry.data.title || stripPrefix(tNode.name);
         tNode.name = "[AIR-" + newNumStr + "] " + displayTitle + summary;
@@ -1263,12 +1449,13 @@
         }
         panel.setPluginData("specTags", entry.data.desc);
         panel.setPluginData("targetNodeId", entry.data.target);
-        panel.setPluginData("markerColor", entry.data.color || "");
+        panel.setPluginData("markerColor", entry.data.color || DEFAULT_MARKER_HEX);
         panel.setRelaunchData({ edit: "" });
         for (let ci = 0; ci < panel.children.length; ci++) {
           panel.children[ci].locked = true;
         }
-        createMarkerBadge(newNumStr, tNode, mColor);
+        const rnMarker = createMarkerBadge(newNumStr, tNode, mColor);
+        groupAnnotationArtifacts(panel, rnMarker, newNumStr);
         tNode.setRelaunchData({ edit: "" });
         if (entry.wasHidden) {
           yield setAnnotationVisibility(entry.newNum, false);
@@ -1315,6 +1502,25 @@
         readSelectedDesc();
       }
       if (msg.type === "rebuild-all-panels") {
+        let collectRebuildSpec2 = function(node) {
+          const rpMatch = node.name.match(/^📋 Annotation: (\d+)/);
+          if (!rpMatch) return;
+          const rpnum = rpMatch[1];
+          if (foundNums[rpnum]) return;
+          let rpDesc = "", rpColor = "", rpTarget = "";
+          try {
+            rpDesc = node.getPluginData("specTags") || "";
+            rpColor = node.getPluginData("markerColor") || "";
+            rpTarget = node.getPluginData("targetNodeId") || "";
+          } catch (e) {
+          }
+          if (rpTarget) {
+            const idxData = rebuildIndexMap.get(rpnum);
+            allSpecs.push({ num: rpnum, data: { title: idxData ? idxData.title : "", desc: rpDesc, color: rpColor, target: rpTarget } });
+            foundNums[rpnum] = true;
+          }
+        };
+        var collectRebuildSpec = collectRebuildSpec2;
         if (msg.theme) {
           currentTheme = msg.theme;
           figma.root.setPluginData("airTheme", currentTheme);
@@ -1325,22 +1531,18 @@
         const foundNums = {};
         const rebuildIndexMap = buildHiddenDataMap();
         for (let rk = 0; rk < children.length; rk++) {
-          const rck = children[rk];
-          const rpMatch = rck.name.match(/^📋 Annotation: (\d+)/);
-          if (!rpMatch) continue;
-          const rpnum = rpMatch[1];
-          if (foundNums[rpnum]) continue;
-          let rpDesc = "", rpColor = "", rpTarget = "";
-          try {
-            rpDesc = rck.getPluginData("specTags") || "";
-            rpColor = rck.getPluginData("markerColor") || "";
-            rpTarget = rck.getPluginData("targetNodeId") || "";
-          } catch (e) {
-          }
-          if (rpTarget) {
-            const idxData = rebuildIndexMap.get(rpnum);
-            allSpecs.push({ num: rpnum, data: { title: idxData ? idxData.title : "", desc: rpDesc, color: rpColor, target: rpTarget } });
-            foundNums[rpnum] = true;
+          collectRebuildSpec2(children[rk]);
+          if (children[rk].name === PARENT_GROUP_NAME && children[rk].type === "GROUP") {
+            const rbGrp = children[rk];
+            for (let gi = 0; gi < rbGrp.children.length; gi++) {
+              const rgc = rbGrp.children[gi];
+              if (rgc.type === "GROUP" && rgc.name.indexOf(ANNOT_GROUP_PREFIX) === 0) {
+                const ag = rgc;
+                for (let ai = 0; ai < ag.children.length; ai++) {
+                  collectRebuildSpec2(ag.children[ai]);
+                }
+              }
+            }
           }
         }
         rebuildIndexMap.forEach(function(rdata, rnum) {
@@ -1365,20 +1567,26 @@
           if (!tNode) continue;
           const panelName = "📋 Annotation: " + spec.num;
           let existPos = null;
-          for (let pi = 0; pi < figma.currentPage.children.length; pi++) {
-            const pn = figma.currentPage.children[pi].name;
-            if (pn === panelName) {
-              existPos = { x: figma.currentPage.children[pi].x, y: figma.currentPage.children[pi].y };
-              break;
+          const rebAnnotGroup = findAnnotationGroup(spec.num);
+          if (rebAnnotGroup) {
+            for (let rgi = 0; rgi < rebAnnotGroup.children.length; rgi++) {
+              if (rebAnnotGroup.children[rgi].name === panelName) {
+                existPos = { x: rebAnnotGroup.children[rgi].x, y: rebAnnotGroup.children[rgi].y };
+                break;
+              }
             }
           }
-          for (let di = figma.currentPage.children.length - 1; di >= 0; di--) {
-            const dn = figma.currentPage.children[di].name;
-            if (dn === panelName) {
-              figma.currentPage.children[di].remove();
+          if (!existPos) {
+            for (let pi = 0; pi < figma.currentPage.children.length; pi++) {
+              const pn = figma.currentPage.children[pi].name;
+              if (pn === panelName) {
+                existPos = { x: figma.currentPage.children[pi].x, y: figma.currentPage.children[pi].y };
+                break;
+              }
             }
           }
-          const mColor = spec.data.color ? hexToRgb(spec.data.color) : CLR.headerBg;
+          yield removeExistingArtifacts(spec.num);
+          const mColor = hexToRgb(spec.data.color || DEFAULT_MARKER_HEX);
           const newPanel = createSpecPanel(spec.data.title, spec.data.desc, spec.num, tNode, mColor);
           figma.currentPage.appendChild(newPanel);
           if (existPos) {
@@ -1387,11 +1595,13 @@
           }
           newPanel.setPluginData("specTags", spec.data.desc);
           newPanel.setPluginData("targetNodeId", targetId);
-          newPanel.setPluginData("markerColor", spec.data.color || "");
+          newPanel.setPluginData("markerColor", spec.data.color || DEFAULT_MARKER_HEX);
           newPanel.setRelaunchData({ edit: "" });
           for (let ci = 0; ci < newPanel.children.length; ci++) {
             newPanel.children[ci].locked = true;
           }
+          const rebMarker = createMarkerBadge(spec.num, tNode, mColor);
+          groupAnnotationArtifacts(newPanel, rebMarker, spec.num);
           rebuilt++;
         }
         const rebuildHiddenNums = getHiddenNums();
@@ -1413,6 +1623,32 @@
         readSelectedDesc();
       }
       if (msg.type === "list-specs") {
+        let cachePanelTarget2 = function(node) {
+          const pm = node.name.match(/^📋 Annotation: (\d+)/);
+          if (pm) {
+            try {
+              panelTargetMap[pm[1]] = node.getPluginData("targetNodeId") || "";
+            } catch (e) {
+            }
+          }
+        }, collectListFallback2 = function(node) {
+          const panelMatch = node.name.match(/^📋 Annotation: (\d+)/);
+          if (!panelMatch) return;
+          const pnum = panelMatch[1];
+          if (foundNums[pnum]) return;
+          let pDesc = "", pColor = "", pTargetId = "";
+          try {
+            pDesc = node.getPluginData("specTags") || "";
+            pColor = node.getPluginData("markerColor") || "";
+            pTargetId = node.getPluginData("targetNodeId") || "";
+          } catch (e) {
+          }
+          if (pTargetId) {
+            listFallbacks.push({ pnum, pDesc, pColor, pTargetId });
+            foundNums[pnum] = true;
+          }
+        };
+        var cachePanelTarget = cachePanelTarget2, collectListFallback = collectListFallback2;
         const specs = [];
         const foundNums = {};
         const children = figma.currentPage.children;
@@ -1420,11 +1656,17 @@
         const listHiddenNums = getHiddenNums();
         const panelTargetMap = {};
         for (let pi = 0; pi < children.length; pi++) {
-          const pm = children[pi].name.match(/^📋 Annotation: (\d+)/);
-          if (pm) {
-            try {
-              panelTargetMap[pm[1]] = children[pi].getPluginData("targetNodeId") || "";
-            } catch (e) {
+          cachePanelTarget2(children[pi]);
+          if (children[pi].name === PARENT_GROUP_NAME && children[pi].type === "GROUP") {
+            const listGrp = children[pi];
+            for (let gi = 0; gi < listGrp.children.length; gi++) {
+              const lgc = listGrp.children[gi];
+              if (lgc.type === "GROUP" && lgc.name.indexOf(ANNOT_GROUP_PREFIX) === 0) {
+                const ag = lgc;
+                for (let ai = 0; ai < ag.children.length; ai++) {
+                  cachePanelTarget2(ag.children[ai]);
+                }
+              }
             }
           }
         }
@@ -1447,21 +1689,18 @@
         });
         const listFallbacks = [];
         for (let k = 0; k < children.length; k++) {
-          const ck = children[k];
-          const panelMatch = ck.name.match(/^📋 Annotation: (\d+)/);
-          if (!panelMatch) continue;
-          const pnum = panelMatch[1];
-          if (foundNums[pnum]) continue;
-          let pDesc = "", pColor = "", pTargetId = "";
-          try {
-            pDesc = ck.getPluginData("specTags") || "";
-            pColor = ck.getPluginData("markerColor") || "";
-            pTargetId = ck.getPluginData("targetNodeId") || "";
-          } catch (e) {
-          }
-          if (pTargetId) {
-            listFallbacks.push({ pnum, pDesc, pColor, pTargetId });
-            foundNums[pnum] = true;
+          collectListFallback2(children[k]);
+          if (children[k].name === PARENT_GROUP_NAME && children[k].type === "GROUP") {
+            const lGrp = children[k];
+            for (let gi = 0; gi < lGrp.children.length; gi++) {
+              const lgc = lGrp.children[gi];
+              if (lgc.type === "GROUP" && lgc.name.indexOf(ANNOT_GROUP_PREFIX) === 0) {
+                const ag = lgc;
+                for (let ai = 0; ai < ag.children.length; ai++) {
+                  collectListFallback2(ag.children[ai]);
+                }
+              }
+            }
           }
         }
         const listFbPromises = [];
@@ -1586,9 +1825,37 @@
         const allNums = [];
         const seen = {};
         const targetNodeIds = [];
+        const visParentGroup = findParentGroup();
+        if (visParentGroup) {
+          for (let gi = 0; gi < visParentGroup.children.length; gi++) {
+            const gc = visParentGroup.children[gi];
+            if (gc.type === "GROUP" && gc.name.indexOf(ANNOT_GROUP_PREFIX) === 0) {
+              gc.visible = msg.visible;
+              const gm = gc.name.match(/^📌 AIR-(\d+)/);
+              if (gm) {
+                const gnum = parseInt(gm[1]);
+                if (!seen[gnum]) {
+                  allNums.push(gnum);
+                  seen[gnum] = true;
+                }
+              }
+              const ag = gc;
+              for (let ai = 0; ai < ag.children.length; ai++) {
+                if (ag.children[ai].name.match(/^📋 Annotation: \d+/)) {
+                  try {
+                    const tid = ag.children[ai].getPluginData("targetNodeId") || "";
+                    if (tid) targetNodeIds.push(tid);
+                  } catch (e) {
+                  }
+                }
+              }
+            }
+          }
+        }
         const children = figma.currentPage.children;
         for (let i = 0; i < children.length; i++) {
           const c = children[i];
+          if (c.name === PARENT_GROUP_NAME) continue;
           const pm = c.name.match(/^📋 Annotation: (\d+)/);
           if (pm) {
             c.visible = msg.visible;
@@ -1634,7 +1901,7 @@
           if (tNode && "children" in tNode) {
             const tChildren = tNode.children;
             for (let k = 0; k < tChildren.length; k++) {
-              if (tChildren[k].name.match(/^🏷️ \d+$/)) {
+              if (tChildren[k].name.match(/^🏷️ \d+/)) {
                 tChildren[k].visible = msg.visible;
               }
             }
@@ -1670,13 +1937,19 @@
           const newNum = oldToNew[oldNum];
           let data = reorderHiddenMap.get(oldNum) || null;
           if (!data) {
-            for (let ci = 0; ci < children.length; ci++) {
-              const cn = children[ci].name;
+            const roAnnotGrp = findAnnotationGroup(oldNum);
+            const roSearchNodes = [];
+            if (roAnnotGrp) {
+              for (let ai = 0; ai < roAnnotGrp.children.length; ai++) roSearchNodes.push(roAnnotGrp.children[ai]);
+            }
+            for (let ci = 0; ci < children.length; ci++) roSearchNodes.push(children[ci]);
+            for (let ci = 0; ci < roSearchNodes.length; ci++) {
+              const cn = roSearchNodes[ci].name;
               if (cn === "📋 Annotation: " + oldNum) {
                 try {
-                  const pd = children[ci].getPluginData("specTags") || "";
-                  const pc = children[ci].getPluginData("markerColor") || "";
-                  const pt = children[ci].getPluginData("targetNodeId") || "";
+                  const pd = roSearchNodes[ci].getPluginData("specTags") || "";
+                  const pc = roSearchNodes[ci].getPluginData("markerColor") || "";
+                  const pt = roSearchNodes[ci].getPluginData("targetNodeId") || "";
                   let pTitle = "";
                   if (pt) {
                     const tn = yield figma.getNodeByIdAsync(pt);
@@ -1694,11 +1967,22 @@
           }
           if (!data || !data.target) continue;
           let panelPos = null;
-          for (let ci = 0; ci < children.length; ci++) {
-            const cn = children[ci].name;
-            if (cn === "📋 Annotation: " + oldNum) {
-              panelPos = { x: children[ci].x, y: children[ci].y };
-              break;
+          const roPanelGrp = findAnnotationGroup(oldNum);
+          if (roPanelGrp) {
+            for (let ai = 0; ai < roPanelGrp.children.length; ai++) {
+              if (roPanelGrp.children[ai].name === "📋 Annotation: " + oldNum) {
+                panelPos = { x: roPanelGrp.children[ai].x, y: roPanelGrp.children[ai].y };
+                break;
+              }
+            }
+          }
+          if (!panelPos) {
+            for (let ci = 0; ci < children.length; ci++) {
+              const cn = children[ci].name;
+              if (cn === "📋 Annotation: " + oldNum) {
+                panelPos = { x: children[ci].x, y: children[ci].y };
+                break;
+              }
             }
           }
           entries.push({
@@ -1723,7 +2007,7 @@
           const tNode = yield figma.getNodeByIdAsync(entry.data.target);
           if (!tNode) continue;
           const newNumStr = String(entry.newNum);
-          const mColor = entry.data.color ? hexToRgb(entry.data.color) : CLR.headerBg;
+          const mColor = hexToRgb(entry.data.color || DEFAULT_MARKER_HEX);
           const summary = makeSummary(entry.data.desc);
           const displayTitle = entry.data.title || stripPrefix(tNode.name);
           tNode.name = "[AIR-" + newNumStr + "] " + displayTitle + summary;
@@ -1735,12 +2019,13 @@
           }
           panel.setPluginData("specTags", entry.data.desc);
           panel.setPluginData("targetNodeId", entry.data.target);
-          panel.setPluginData("markerColor", entry.data.color || "");
+          panel.setPluginData("markerColor", entry.data.color || DEFAULT_MARKER_HEX);
           panel.setRelaunchData({ edit: "" });
           for (let ci = 0; ci < panel.children.length; ci++) {
             panel.children[ci].locked = true;
           }
-          createMarkerBadge(newNumStr, tNode, mColor);
+          const roMarker = createMarkerBadge(newNumStr, tNode, mColor);
+          groupAnnotationArtifacts(panel, roMarker, newNumStr);
           tNode.setRelaunchData({ edit: "" });
           if (entry.wasHidden) {
             yield setAnnotationVisibility(entry.newNum, false);
@@ -1775,6 +2060,32 @@
       if (msg.type === "delete-all-specs") {
         const allNums = /* @__PURE__ */ new Set();
         const targetIds = {};
+        const delAllMap = buildHiddenDataMap();
+        delAllMap.forEach(function(data, num) {
+          allNums.add(num);
+          if (data.target && !targetIds[num]) targetIds[num] = data.target;
+        });
+        const delParentGroup = findParentGroup();
+        if (delParentGroup) {
+          for (let gi = 0; gi < delParentGroup.children.length; gi++) {
+            const gc = delParentGroup.children[gi];
+            if (gc.type === "GROUP" && gc.name.indexOf(ANNOT_GROUP_PREFIX) === 0) {
+              const ag = gc;
+              for (let ai = 0; ai < ag.children.length; ai++) {
+                const fpMatch = ag.children[ai].name.match(/^📋 Annotation: (\d+)/);
+                if (fpMatch) {
+                  allNums.add(fpMatch[1]);
+                  try {
+                    const tid = ag.children[ai].getPluginData("targetNodeId") || "";
+                    if (tid) targetIds[fpMatch[1]] = tid;
+                  } catch (e) {
+                  }
+                }
+              }
+            }
+          }
+          delParentGroup.remove();
+        }
         const children = figma.currentPage.children;
         for (let i = 0; i < children.length; i++) {
           const c = children[i];
@@ -1799,11 +2110,6 @@
             continue;
           }
         }
-        const delAllMap = buildHiddenDataMap();
-        delAllMap.forEach(function(data, num) {
-          allNums.add(num);
-          if (data.target && !targetIds[num]) targetIds[num] = data.target;
-        });
         const numArr = [];
         allNums.forEach(function(n) {
           numArr.push(n);
@@ -1837,6 +2143,21 @@
           let targetId = "";
           const data = delMap.get(num);
           if (data && data.target) targetId = data.target;
+          if (!targetId) {
+            const delAnnotGroup = findAnnotationGroup(num);
+            if (delAnnotGroup) {
+              for (let di = 0; di < delAnnotGroup.children.length; di++) {
+                const dpm = delAnnotGroup.children[di].name.match(/^📋 Annotation: (\d+)/);
+                if (dpm && dpm[1] === num) {
+                  try {
+                    targetId = delAnnotGroup.children[di].getPluginData("targetNodeId") || "";
+                  } catch (e) {
+                  }
+                  break;
+                }
+              }
+            }
+          }
           if (!targetId) {
             for (let pi = 0; pi < figma.currentPage.children.length; pi++) {
               const pc = figma.currentPage.children[pi];

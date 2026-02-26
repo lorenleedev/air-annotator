@@ -412,7 +412,7 @@ function makeSummary(desc: string): string {
 // ──────────────────────────────────────
 function createSpecPanel(title: string, desc: string, num: string | number, targetNode: SceneNode, markerColor: RGB | undefined): FrameNode {
   const parsed: ParsedTags = parseTags(desc);
-  const headerColor: RGB = markerColor || CLR.headerBg;
+  const headerColor: RGB = markerColor || hexToRgb(DEFAULT_MARKER_HEX);
   const th: ThemeColors = getTheme();
 
   // ── Panel container ──
@@ -609,13 +609,24 @@ function stripPrefix(name: string): string {
 function getNextNum(): number {
   // 항상 페이지 스캔 수행하여 실제 최대 번호 확인
   let max: number = 0;
+  function checkName(name: string): void {
+    const m: RegExpMatchArray | null = name.match(/^\[AIR-(\d+)\]/) ||
+            name.match(/^📋 Annotation: (\d+)/) ||
+            name.match(/^🏷️ (\d+)/) ||
+            name.match(/^📌 AIR-(\d+)/);
+    if (m) { const n: number = parseInt(m[1]); if (n > max) max = n; }
+  }
   const children: readonly SceneNode[] = figma.currentPage.children;
   for (let i = 0; i < children.length; i++) {
     const c: SceneNode = children[i];
-    const m: RegExpMatchArray | null = c.name.match(/^\[AIR-(\d+)\]/) ||
-            c.name.match(/^📋 Annotation: (\d+)/) ||
-            c.name.match(/^🏷️ (\d+)/);
-    if (m) { const n: number = parseInt(m[1]); if (n > max) max = n; }
+    checkName(c.name);
+    // 부모 그룹 내부도 스캔
+    if (c.name === PARENT_GROUP_NAME && c.type === "GROUP") {
+      const grp: GroupNode = c as GroupNode;
+      for (let j = 0; j < grp.children.length; j++) {
+        checkName(grp.children[j].name);
+      }
+    }
   }
   // 스캔 결과만 사용 (캐시 제거 — 삭제 후 번호 재사용 허용)
   const next: number = max + 1;
@@ -627,15 +638,41 @@ function getNextNum(): number {
 // ──────────────────────────────────────
 async function removeExistingArtifacts(num: string | number): Promise<void> {
   const panelName: string = "📋 Annotation: " + num;
-  const markerName: string = "🏷️ " + num;
+  const markerName: string = "🏷️ " + num + " [AIR]";
+  const legacyMarkerName: string = "🏷️ " + num;
 
+  // 그룹 구조 먼저 확인 — 개별 그룹이 있으면 통째로 삭제
+  const annotGroup: GroupNode | null = findAnnotationGroup(num);
   let targetNodeId: string = "";
+  if (annotGroup) {
+    // 그룹 내부에서 targetNodeId 추출
+    for (let i = 0; i < annotGroup.children.length; i++) {
+      const gc: SceneNode = annotGroup.children[i];
+      if (gc.name === panelName) {
+        try { targetNodeId = gc.getPluginData("targetNodeId") || ""; } catch(e) {}
+      }
+    }
+    // 그룹 삭제 후 부모 그룹이 비어있으면 부모도 삭제
+    // (Figma는 빈 GroupNode를 자동 제거하므로 try/catch로 보호)
+    const parentGroup: GroupNode | null = findParentGroup();
+    annotGroup.remove();
+    try {
+      if (parentGroup && parentGroup.parent && parentGroup.children.length === 0) {
+        parentGroup.remove();
+      }
+    } catch(e) {}
+  }
+
+  // 레거시: 페이지 레벨 산출물 삭제
   const children: readonly SceneNode[] = figma.currentPage.children;
   // 1차 패스: targetNodeId 수집 (패널 pluginData)
-  for (let i = 0; i < children.length; i++) {
-    const c: SceneNode = children[i];
-    if (!targetNodeId && c.name === panelName) {
-      try { targetNodeId = c.getPluginData("targetNodeId") || ""; } catch(e) {}
+  if (!targetNodeId) {
+    for (let i = 0; i < children.length; i++) {
+      const c: SceneNode = children[i];
+      if (c.name === panelName) {
+        try { targetNodeId = c.getPluginData("targetNodeId") || ""; } catch(e) {}
+        break;
+      }
     }
   }
   // 폴백: 인덱스에서 targetNodeId 조회
@@ -643,11 +680,11 @@ async function removeExistingArtifacts(num: string | number): Promise<void> {
     const indexData: HiddenData | null = readHiddenData(String(num));
     if (indexData && indexData.target) targetNodeId = indexData.target;
   }
-  // 2차 패스: 산출물 삭제
+  // 2차 패스: 페이지 레벨 산출물 삭제
   for (let i = children.length - 1; i >= 0; i--) {
     const c: SceneNode = children[i];
     const n: string = c.name;
-    if (n === panelName || n === markerName) {
+    if (n === panelName || n === markerName || n === legacyMarkerName) {
       c.remove();
     }
   }
@@ -659,7 +696,7 @@ async function removeExistingArtifacts(num: string | number): Promise<void> {
       const tChildren: readonly SceneNode[] = (targetNode as FrameNode).children;
       for (let k = tChildren.length - 1; k >= 0; k--) {
         const tc: SceneNode = tChildren[k];
-        if (tc.name === markerName) {
+        if (tc.name === markerName || tc.name === legacyMarkerName) {
           tc.remove();
         }
       }
@@ -671,6 +708,68 @@ async function removeExistingArtifacts(num: string | number): Promise<void> {
 // 숨김 텍스트 노드 (AI 읽기용)
 // ──────────────────────────────────────
 const INDEX_NAME: string = "📑 AIR: AI-Readable Annotator Index";
+const PARENT_GROUP_NAME: string = "📌 AIR Annotations";
+const ANNOT_GROUP_PREFIX: string = "📌 AIR-";
+const DEFAULT_MARKER_HEX: string = "#F24E1E";
+
+// ──────────────────────────────────────
+// 그룹 관리 헬퍼
+// ──────────────────────────────────────
+function findParentGroup(): GroupNode | null {
+  const children: readonly SceneNode[] = figma.currentPage.children;
+  for (let i = 0; i < children.length; i++) {
+    if (children[i].name === PARENT_GROUP_NAME && children[i].type === "GROUP") {
+      return children[i] as GroupNode;
+    }
+  }
+  return null;
+}
+
+function findAnnotationGroup(num: string | number): GroupNode | null {
+  const groupName: string = ANNOT_GROUP_PREFIX + num;
+  // 부모 그룹 내 검색
+  const pg: GroupNode | null = findParentGroup();
+  if (pg) {
+    for (let i = 0; i < pg.children.length; i++) {
+      if (pg.children[i].name === groupName && pg.children[i].type === "GROUP") {
+        return pg.children[i] as GroupNode;
+      }
+    }
+  }
+  // 폴백: 페이지 레벨 검색
+  const children: readonly SceneNode[] = figma.currentPage.children;
+  for (let i = 0; i < children.length; i++) {
+    if (children[i].name === groupName && children[i].type === "GROUP") {
+      return children[i] as GroupNode;
+    }
+  }
+  return null;
+}
+
+function groupAnnotationArtifacts(panel: FrameNode, marker: FrameNode, num: string | number): void {
+  // 개별 그룹 생성 (marker는 그룹화 후 잠금 — locked 상태에서 figma.group() 실패 방지)
+  const groupName: string = ANNOT_GROUP_PREFIX + num;
+  const annotGroup: GroupNode = figma.group([marker, panel], figma.currentPage);
+  annotGroup.name = groupName;
+
+  // 부모 그룹 찾기 또는 생성
+  let pg: GroupNode | null = findParentGroup();
+  if (pg) {
+    pg.appendChild(annotGroup);
+  } else {
+    // 부모 그룹 생성: 인덱스 프레임이 있으면 함께 묶기
+    const groupChildren: SceneNode[] = [annotGroup];
+    const children: readonly SceneNode[] = figma.currentPage.children;
+    for (let i = 0; i < children.length; i++) {
+      if (children[i].name === INDEX_NAME) {
+        groupChildren.push(children[i]);
+        break;
+      }
+    }
+    pg = figma.group(groupChildren, figma.currentPage);
+    pg.name = PARENT_GROUP_NAME;
+  }
+}
 
 function readHiddenData(num: string | number): HiddenData | null {
   // Try index first
@@ -751,18 +850,31 @@ function parseIndexText(content: string): Map<string, HiddenData> {
 }
 
 function readIndexMap(): Map<string, HiddenData> {
-  // Try to read from index frame first
-  const children: readonly SceneNode[] = figma.currentPage.children;
-  for (let i = 0; i < children.length; i++) {
-    const c: SceneNode = children[i];
-    if (c.name === INDEX_NAME && "children" in c) {
-      const frame = c as FrameNode;
+  function tryReadIndex(node: SceneNode): Map<string, HiddenData> | null {
+    if (node.name === INDEX_NAME && "children" in node) {
+      const frame = node as FrameNode;
       for (let j = 0; j < frame.children.length; j++) {
         if (frame.children[j].type === "TEXT") {
           const content: string = (frame.children[j] as TextNode).characters || "";
           const map: Map<string, HiddenData> = parseIndexText(content);
           if (map.size > 0) return map;
         }
+      }
+    }
+    return null;
+  }
+  // 페이지 레벨 검색
+  const children: readonly SceneNode[] = figma.currentPage.children;
+  for (let i = 0; i < children.length; i++) {
+    const c: SceneNode = children[i];
+    const result: Map<string, HiddenData> | null = tryReadIndex(c);
+    if (result) return result;
+    // 부모 그룹 내 인덱스 프레임 검색
+    if (c.name === PARENT_GROUP_NAME && c.type === "GROUP") {
+      const grp: GroupNode = c as GroupNode;
+      for (let j = 0; j < grp.children.length; j++) {
+        const gr: Map<string, HiddenData> | null = tryReadIndex(grp.children[j]);
+        if (gr) return gr;
       }
     }
   }
@@ -793,8 +905,16 @@ function setHiddenNums(nums: Set<number>): void {
 
 async function setAnnotationVisibility(num: number, isVisible: boolean): Promise<void> {
   const panelName: string = "📋 Annotation: " + num;
-  const markerName: string = "🏷️ " + num;
+  const markerName: string = "🏷️ " + num + " [AIR]";
 
+  // 개별 그룹이 있으면 그룹 visibility 토글 (자식 자동 적용)
+  const annotGroup: GroupNode | null = findAnnotationGroup(num);
+  if (annotGroup) {
+    annotGroup.visible = isVisible;
+    return;
+  }
+
+  // 레거시: 페이지 레벨 검색
   let targetNodeId: string = "";
   let foundPanel: boolean = false;
   let foundMarker: boolean = false;
@@ -836,26 +956,33 @@ async function updateSpecIndex(excludeNums?: Set<string>): Promise<void> {
   let existingIdx: FrameNode | null = null;
   let existingTxt: TextNode | null = null;
   let indexMap: Map<string, HiddenData> = new Map();
-  for (let ri = figma.currentPage.children.length - 1; ri >= 0; ri--) {
-    const rc: SceneNode = figma.currentPage.children[ri];
-    if (rc.name === INDEX_NAME) {
-      if (!existingIdx && "children" in rc) {
-        const idxFrame: FrameNode = rc as FrameNode;
-        for (let ti = 0; ti < idxFrame.children.length; ti++) {
-          if (idxFrame.children[ti].type === "TEXT") {
-            existingIdx = idxFrame;
-            existingTxt = idxFrame.children[ti] as TextNode;
-            // 파싱하여 인덱스 데이터 보존 (비우지 않음 — 나중에 덮어씀)
-            const indexContent: string = existingTxt.characters || "";
-            indexMap = parseIndexText(indexContent);
-            break;
+  // 검색할 children 목록 수집 (페이지 레벨 + 부모 그룹)
+  const idxSearchSources: Array<readonly SceneNode[]> = [figma.currentPage.children];
+  const idxPg: GroupNode | null = findParentGroup();
+  if (idxPg) idxSearchSources.push(idxPg.children);
+  for (let si = 0; si < idxSearchSources.length; si++) {
+    const searchChildren: readonly SceneNode[] = idxSearchSources[si];
+    for (let ri = searchChildren.length - 1; ri >= 0; ri--) {
+      const rc: SceneNode = searchChildren[ri];
+      if (rc.name === INDEX_NAME) {
+        if (!existingIdx && "children" in rc) {
+          const idxFrame: FrameNode = rc as FrameNode;
+          for (let ti = 0; ti < idxFrame.children.length; ti++) {
+            if (idxFrame.children[ti].type === "TEXT") {
+              existingIdx = idxFrame;
+              existingTxt = idxFrame.children[ti] as TextNode;
+              const indexContent: string = existingTxt.characters || "";
+              indexMap = parseIndexText(indexContent);
+              break;
+            }
           }
+          if (!existingTxt) rc.remove();
+        } else {
+          rc.remove();
         }
-        if (!existingTxt) rc.remove();
-      } else {
-        rc.remove();
       }
     }
+    if (existingIdx) break;
   }
   if (excludeNums) {
     excludeNums.forEach(function(n: string) { indexMap.delete(n); });
@@ -870,24 +997,39 @@ async function updateSpecIndex(excludeNums?: Set<string>): Promise<void> {
   }
   const panelDataMap: Record<string, PanelInfo> = {};
 
-  const pageChildren: readonly SceneNode[] = figma.currentPage.children;
-  for (let i = pageChildren.length - 1; i >= 0; i--) {
-    const c: SceneNode = pageChildren[i];
-    if (c.name === INDEX_NAME) { continue; }
-
-    const fpMatch: RegExpMatchArray | null = c.name.match(/^📋 Annotation: (\d+)/);
+  function collectPanelData(node: SceneNode): void {
+    if (node.name === INDEX_NAME) return;
+    const fpMatch: RegExpMatchArray | null = node.name.match(/^📋 Annotation: (\d+)/);
     if (fpMatch) {
       const fpnum: string = fpMatch[1];
       let fpDesc: string = "", fpColor: string = "", fpTarget: string = "";
       try {
-        fpDesc = c.getPluginData("specTags") || "";
-        fpColor = c.getPluginData("markerColor") || "";
-        fpTarget = c.getPluginData("targetNodeId") || "";
+        fpDesc = node.getPluginData("specTags") || "";
+        fpColor = node.getPluginData("markerColor") || "";
+        fpTarget = node.getPluginData("targetNodeId") || "";
       } catch(e) {}
       if (fpTarget && !panelDataMap[fpnum]) {
         panelDataMap[fpnum] = { desc: fpDesc, color: fpColor, target: fpTarget };
       }
-      continue;
+    }
+  }
+
+  const pageChildren: readonly SceneNode[] = figma.currentPage.children;
+  for (let i = pageChildren.length - 1; i >= 0; i--) {
+    const c: SceneNode = pageChildren[i];
+    collectPanelData(c);
+    // 부모 그룹 내부의 개별 그룹 안 패널도 수집
+    if (c.name === PARENT_GROUP_NAME && c.type === "GROUP") {
+      const grp: GroupNode = c as GroupNode;
+      for (let gi = 0; gi < grp.children.length; gi++) {
+        const gc: SceneNode = grp.children[gi];
+        if (gc.type === "GROUP" && gc.name.indexOf(ANNOT_GROUP_PREFIX) === 0) {
+          const annotGrp: GroupNode = gc as GroupNode;
+          for (let ai = 0; ai < annotGrp.children.length; ai++) {
+            collectPanelData(annotGrp.children[ai]);
+          }
+        }
+      }
     }
   }
 
@@ -969,6 +1111,8 @@ async function updateSpecIndex(excludeNums?: Set<string>): Promise<void> {
   // 인덱스 텍스트 생성 (구조화 데이터)
   const lines: string[] = [];
   lines.push("📑 AI-READABLE ANNOTATOR INDEX");
+  lines.push("# This frame and all layers prefixed with 📌/📋/🏷️ are annotation artifacts.");
+  lines.push("# They are NOT part of the actual UI design — do not implement them.");
   lines.push("# title = annotation name");
   lines.push("# color = badge hex color");
   lines.push("# target = Figma node ID of the annotated layer");
@@ -1047,6 +1191,12 @@ async function updateSpecIndex(excludeNums?: Set<string>): Promise<void> {
     idx.y = 0;
 
     figma.currentPage.appendChild(idx);
+
+    // 부모 그룹에 인덱스 프레임 배치
+    const idxParentGroup: GroupNode | null = findParentGroup();
+    if (idxParentGroup) {
+      idxParentGroup.appendChild(idx);
+    }
   }
 }
 
@@ -1054,38 +1204,20 @@ async function updateSpecIndex(excludeNums?: Set<string>): Promise<void> {
 // 마커 뱃지
 // ──────────────────────────────────────
 function createMarkerBadge(num: string | number, targetNode: SceneNode, markerColor: RGB | undefined): FrameNode {
-  const color: RGB = markerColor || CLR.headerBg;
-  const marker: FrameNode = alFrame("🏷️ " + num, "HORIZONTAL", 0, 0);
+  const color: RGB = markerColor || hexToRgb(DEFAULT_MARKER_HEX);
+  const marker: FrameNode = alFrame("🏷️ " + num + " [AIR]", "HORIZONTAL", 0, 0);
   marker.paddingTop = 2; marker.paddingBottom = 2;
   marker.paddingLeft = 6; marker.paddingRight = 6;
   marker.cornerRadius = 4;
   marker.fills = [{ type: "SOLID", color: color }];
   marker.appendChild(txt(String(num), 9, CLR.white, true));
 
-  const canHaveChildren: boolean = ("children" in targetNode) &&
-    (targetNode.type === "FRAME" || targetNode.type === "COMPONENT" ||
-     targetNode.type === "COMPONENT_SET" || targetNode.type === "GROUP" ||
-     targetNode.type === "SECTION");
-
-  if (canHaveChildren) {
-    try {
-      (targetNode as FrameNode).appendChild(marker);
-      marker.layoutPositioning = "ABSOLUTE";
-      marker.x = 4;
-      marker.y = 4;
-    } catch(e) {
-      figma.currentPage.appendChild(marker);
-      marker.x = targetNode.absoluteTransform[0][2];
-      marker.y = targetNode.absoluteTransform[1][2] - 20;
-    }
-  } else {
-    figma.currentPage.appendChild(marker);
-    marker.x = targetNode.absoluteTransform[0][2];
-    marker.y = targetNode.absoluteTransform[1][2] - 20;
-  }
+  // 항상 페이지에 추가 (그룹화를 위해 패널과 같은 부모 필요)
+  figma.currentPage.appendChild(marker);
+  marker.x = targetNode.absoluteTransform[0][2];
+  marker.y = targetNode.absoluteTransform[1][2] - 20;
 
   marker.setRelaunchData({ edit: '' });
-  marker.locked = true;
   return marker;
 }
 
@@ -1101,6 +1233,7 @@ function scanLayers(node: BaseNode & ChildrenMixin, depth: number): LayerInfo[] 
     if (child.name.indexOf("📋 Annotation:") === 0) continue;
     if (child.name.indexOf("📑 AIR:") === 0) continue;   // 인덱스 프레임 필터
     if (child.name.indexOf("🏷️") === 0) continue;
+    if (child.name.indexOf("📌 AIR") === 0) continue;    // 그룹 필터
     if ((child.type as string) === "PAGE" || (child.type as string) === "DOCUMENT") continue;
 
     results.push({ id: child.id, name: child.name, type: child.type, depth: depth });
@@ -1205,14 +1338,32 @@ async function readSelectedDesc(): Promise<void> {
       color = hidden.color;
     } else {
       const panelName: string = "📋 Annotation: " + num;
-      for (let i = 0; i < figma.currentPage.children.length; i++) {
-        const cin: string = figma.currentPage.children[i].name;
-        if (cin === panelName) {
-          try {
-            desc = figma.currentPage.children[i].getPluginData("specTags") || "";
-            color = figma.currentPage.children[i].getPluginData("markerColor") || "";
-          } catch(e) {}
-          break;
+      // 그룹 내부 먼저 검색
+      const rdAnnotGrp: GroupNode | null = findAnnotationGroup(num);
+      let rdFound: boolean = false;
+      if (rdAnnotGrp) {
+        for (let rdi = 0; rdi < rdAnnotGrp.children.length; rdi++) {
+          if (rdAnnotGrp.children[rdi].name === panelName) {
+            try {
+              desc = rdAnnotGrp.children[rdi].getPluginData("specTags") || "";
+              color = rdAnnotGrp.children[rdi].getPluginData("markerColor") || "";
+            } catch(e) {}
+            rdFound = true;
+            break;
+          }
+        }
+      }
+      // 페이지 레벨 폴백
+      if (!rdFound) {
+        for (let i = 0; i < figma.currentPage.children.length; i++) {
+          const cin: string = figma.currentPage.children[i].name;
+          if (cin === panelName) {
+            try {
+              desc = figma.currentPage.children[i].getPluginData("specTags") || "";
+              color = figma.currentPage.children[i].getPluginData("markerColor") || "";
+            } catch(e) {}
+            break;
+          }
         }
       }
     }
@@ -1230,7 +1381,8 @@ async function readSelectedDesc(): Promise<void> {
 // ──────────────────────────────────────
 async function writeSpec(node: BaseNode, title: string, desc: string, num: string, colorHex: string): Promise<WriteResult> {
   const nodeId: string = node.id;
-  const markerColor: RGB = colorHex ? hexToRgb(colorHex) : CLR.headerBg;
+  if (!colorHex) colorHex = DEFAULT_MARKER_HEX;
+  const markerColor: RGB = hexToRgb(colorHex);
 
   try {
     let currentNum: string = num;
@@ -1246,10 +1398,29 @@ async function writeSpec(node: BaseNode, title: string, desc: string, num: strin
     }
     if (!currentNum) return { ok: false, error: "번호가 없습니다." };
 
-    // 단일 패스: 기존 패널 위치 저장 + 산출물 삭제
+    // 기존 패널 위치 저장 + 산출물 삭제
     let existingPos: { x: number; y: number } | null = null;
     const panelName: string = "📋 Annotation: " + currentNum;
-    const markerName: string = "🏷️ " + currentNum;
+    const markerName: string = "🏷️ " + currentNum + " [AIR]";
+    const wsLegacyMarker: string = "🏷️ " + currentNum;
+
+    // 그룹 구조 먼저 확인
+    const wsAnnotGroup: GroupNode | null = findAnnotationGroup(currentNum);
+    if (wsAnnotGroup) {
+      for (let wgi = 0; wgi < wsAnnotGroup.children.length; wgi++) {
+        if (wsAnnotGroup.children[wgi].name === panelName) {
+          if (!existingPos) existingPos = { x: wsAnnotGroup.children[wgi].x, y: wsAnnotGroup.children[wgi].y };
+        }
+      }
+      const wsParentGroup: GroupNode | null = findParentGroup();
+      wsAnnotGroup.remove();
+      try {
+        if (wsParentGroup && wsParentGroup.parent && wsParentGroup.children.length === 0) {
+          wsParentGroup.remove();
+        }
+      } catch(e) {}
+    }
+    // 레거시: 페이지 레벨 산출물 삭제
     const wChildren: readonly SceneNode[] = figma.currentPage.children;
     for (let wi = wChildren.length - 1; wi >= 0; wi--) {
       const wc: SceneNode = wChildren[wi];
@@ -1257,15 +1428,15 @@ async function writeSpec(node: BaseNode, title: string, desc: string, num: strin
       if (wn === panelName) {
         if (!existingPos) existingPos = { x: wc.x, y: wc.y };
         wc.remove();
-      } else if (wn === markerName) {
+      } else if (wn === markerName || wn === wsLegacyMarker) {
         wc.remove();
       }
     }
-    // 타겟 노드 내부의 중첩 마커 뱃지 제거
+    // 타겟 노드 내부의 중첩 마커 뱃지 제거 (레거시)
     if ("children" in node) {
       const tChildren: readonly SceneNode[] = (node as FrameNode).children;
       for (let tk = tChildren.length - 1; tk >= 0; tk--) {
-        if (tChildren[tk].name === markerName) tChildren[tk].remove();
+        if (tChildren[tk].name === markerName || tChildren[tk].name === wsLegacyMarker) tChildren[tk].remove();
       }
     }
     if (!desc || !desc.trim()) {
@@ -1282,16 +1453,19 @@ async function writeSpec(node: BaseNode, title: string, desc: string, num: strin
       panel.x = existingPos.x;
       panel.y = existingPos.y;
     }
-    createMarkerBadge(currentNum, node as SceneNode, markerColor);
+    const wsMarker: FrameNode = createMarkerBadge(currentNum, node as SceneNode, markerColor);
 
     panel.setPluginData("specTags", desc);
     panel.setPluginData("targetNodeId", nodeId);
-    panel.setPluginData("markerColor", colorHex || "");
+    panel.setPluginData("markerColor", colorHex);
     panel.setRelaunchData({ edit: '' });
     // 패널은 이동 가능, 내부 텍스트는 편집 불가
     for (let ci = 0; ci < panel.children.length; ci++) {
       panel.children[ci].locked = true;
     }
+
+    // 그룹화
+    groupAnnotationArtifacts(panel, wsMarker, currentNum);
 
     // 대상 노드에도 Relaunch 버튼 설정
     (node as SceneNode).setRelaunchData({ edit: '' });
@@ -1330,12 +1504,31 @@ async function applyBatch(mappings: BatchMapping[]): Promise<BatchResult> {
 
 // ──────────────────────────────────────
 async function renumberAllSpecs(): Promise<void> {
-  // Collect current annotation numbers from panels
+  // Collect current annotation numbers from panels (그룹 내부 + 페이지 레벨)
   const currentNums: number[] = [];
+  const rnSeen: Record<number, boolean> = {};
+  function collectRnNum(node: SceneNode): void {
+    const m: RegExpMatchArray | null = node.name.match(/^📋 Annotation: (\d+)/);
+    if (m) {
+      const n: number = parseInt(m[1]);
+      if (!rnSeen[n]) { currentNums.push(n); rnSeen[n] = true; }
+    }
+  }
   const children: readonly SceneNode[] = figma.currentPage.children;
   for (let i = 0; i < children.length; i++) {
-    const m: RegExpMatchArray | null = children[i].name.match(/^📋 Annotation: (\d+)/);
-    if (m) currentNums.push(parseInt(m[1]));
+    collectRnNum(children[i]);
+    if (children[i].name === PARENT_GROUP_NAME && children[i].type === "GROUP") {
+      const rnGrp: GroupNode = children[i] as GroupNode;
+      for (let gi = 0; gi < rnGrp.children.length; gi++) {
+        const rgc: SceneNode = rnGrp.children[gi];
+        if (rgc.type === "GROUP" && rgc.name.indexOf(ANNOT_GROUP_PREFIX) === 0) {
+          const ag: GroupNode = rgc as GroupNode;
+          for (let ai = 0; ai < ag.children.length; ai++) {
+            collectRnNum(ag.children[ai]);
+          }
+        }
+      }
+    }
   }
   currentNums.sort(function(a: number, b: number): number { return a - b; });
 
@@ -1376,15 +1569,21 @@ async function renumberAllSpecs(): Promise<void> {
     const newNum: number = oldToNew[oldNum];
     let data: HiddenData | null = reorderHiddenMap.get(oldNum) || null;
 
-    // Fallback to panel pluginData
+    // Fallback to panel pluginData (그룹 내부 + 페이지 레벨)
     if (!data) {
-      for (let ci = 0; ci < rnChildren.length; ci++) {
-        const cn: string = rnChildren[ci].name;
+      const rnAnnotGrp: GroupNode | null = findAnnotationGroup(oldNum);
+      const rnSearchNodes: SceneNode[] = [];
+      if (rnAnnotGrp) {
+        for (let ai = 0; ai < rnAnnotGrp.children.length; ai++) rnSearchNodes.push(rnAnnotGrp.children[ai]);
+      }
+      for (let ci = 0; ci < rnChildren.length; ci++) rnSearchNodes.push(rnChildren[ci]);
+      for (let ci = 0; ci < rnSearchNodes.length; ci++) {
+        const cn: string = rnSearchNodes[ci].name;
         if (cn === "📋 Annotation: " + oldNum) {
           try {
-            const pd: string = rnChildren[ci].getPluginData("specTags") || "";
-            const pc: string = rnChildren[ci].getPluginData("markerColor") || "";
-            const pt: string = rnChildren[ci].getPluginData("targetNodeId") || "";
+            const pd: string = rnSearchNodes[ci].getPluginData("specTags") || "";
+            const pc: string = rnSearchNodes[ci].getPluginData("markerColor") || "";
+            const pt: string = rnSearchNodes[ci].getPluginData("targetNodeId") || "";
             let pTitle: string = "";
             if (pt) {
               const tn: BaseNode | null = await figma.getNodeByIdAsync(pt);
@@ -1402,13 +1601,24 @@ async function renumberAllSpecs(): Promise<void> {
 
     if (!data || !data.target) continue;
 
-    // Save panel position
+    // Save panel position (그룹 내부 + 페이지 레벨)
     let panelPos: { x: number; y: number } | null = null;
-    for (let ci = 0; ci < rnChildren.length; ci++) {
-      const cn: string = rnChildren[ci].name;
-      if (cn === "📋 Annotation: " + oldNum) {
-        panelPos = { x: rnChildren[ci].x, y: rnChildren[ci].y };
-        break;
+    const rnPanelGrp: GroupNode | null = findAnnotationGroup(oldNum);
+    if (rnPanelGrp) {
+      for (let ai = 0; ai < rnPanelGrp.children.length; ai++) {
+        if (rnPanelGrp.children[ai].name === "📋 Annotation: " + oldNum) {
+          panelPos = { x: rnPanelGrp.children[ai].x, y: rnPanelGrp.children[ai].y };
+          break;
+        }
+      }
+    }
+    if (!panelPos) {
+      for (let ci = 0; ci < rnChildren.length; ci++) {
+        const cn: string = rnChildren[ci].name;
+        if (cn === "📋 Annotation: " + oldNum) {
+          panelPos = { x: rnChildren[ci].x, y: rnChildren[ci].y };
+          break;
+        }
       }
     }
 
@@ -1437,7 +1647,7 @@ async function renumberAllSpecs(): Promise<void> {
     if (!tNode) continue;
 
     const newNumStr: string = String(entry.newNum);
-    const mColor: RGB = entry.data.color ? hexToRgb(entry.data.color) : CLR.headerBg;
+    const mColor: RGB = hexToRgb(entry.data.color || DEFAULT_MARKER_HEX);
     const summary: string = makeSummary(entry.data.desc);
     const displayTitle: string = entry.data.title || stripPrefix(tNode.name);
 
@@ -1451,13 +1661,14 @@ async function renumberAllSpecs(): Promise<void> {
     }
     panel.setPluginData("specTags", entry.data.desc);
     panel.setPluginData("targetNodeId", entry.data.target);
-    panel.setPluginData("markerColor", entry.data.color || "");
+    panel.setPluginData("markerColor", entry.data.color || DEFAULT_MARKER_HEX);
     panel.setRelaunchData({ edit: '' });
     for (let ci = 0; ci < panel.children.length; ci++) {
       panel.children[ci].locked = true;
     }
 
-    createMarkerBadge(newNumStr, tNode as SceneNode, mColor);
+    const rnMarker: FrameNode = createMarkerBadge(newNumStr, tNode as SceneNode, mColor);
+    groupAnnotationArtifacts(panel, rnMarker, newNumStr);
     (tNode as SceneNode).setRelaunchData({ edit: '' });
 
     if (entry.wasHidden) {
@@ -1524,23 +1735,37 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
     const rebuildIndexMap: Map<string, HiddenData> = buildHiddenDataMap();
 
     // 1차: 패널 pluginData (최신 데이터)
-    for (let rk = 0; rk < children.length; rk++) {
-      const rck: SceneNode = children[rk];
-      const rpMatch: RegExpMatchArray | null = rck.name.match(/^📋 Annotation: (\d+)/);
-      if (!rpMatch) continue;
+    function collectRebuildSpec(node: SceneNode): void {
+      const rpMatch: RegExpMatchArray | null = node.name.match(/^📋 Annotation: (\d+)/);
+      if (!rpMatch) return;
       const rpnum: string = rpMatch[1];
-      if (foundNums[rpnum]) continue;
+      if (foundNums[rpnum]) return;
       let rpDesc: string = "", rpColor: string = "", rpTarget: string = "";
       try {
-        rpDesc = rck.getPluginData("specTags") || "";
-        rpColor = rck.getPluginData("markerColor") || "";
-        rpTarget = rck.getPluginData("targetNodeId") || "";
+        rpDesc = node.getPluginData("specTags") || "";
+        rpColor = node.getPluginData("markerColor") || "";
+        rpTarget = node.getPluginData("targetNodeId") || "";
       } catch(e) {}
       if (rpTarget) {
-        // title: 인덱스에 있으면 사용, 없으면 나중에 노드에서 resolve
         const idxData: HiddenData | undefined = rebuildIndexMap.get(rpnum);
         allSpecs.push({ num: rpnum, data: { title: idxData ? idxData.title : "", desc: rpDesc, color: rpColor, target: rpTarget } });
         foundNums[rpnum] = true;
+      }
+    }
+    for (let rk = 0; rk < children.length; rk++) {
+      collectRebuildSpec(children[rk]);
+      // 부모 그룹 내부도 스캔
+      if (children[rk].name === PARENT_GROUP_NAME && children[rk].type === "GROUP") {
+        const rbGrp: GroupNode = children[rk] as GroupNode;
+        for (let gi = 0; gi < rbGrp.children.length; gi++) {
+          const rgc: SceneNode = rbGrp.children[gi];
+          if (rgc.type === "GROUP" && rgc.name.indexOf(ANNOT_GROUP_PREFIX) === 0) {
+            const ag: GroupNode = rgc as GroupNode;
+            for (let ai = 0; ai < ag.children.length; ai++) {
+              collectRebuildSpec(ag.children[ai]);
+            }
+          }
+        }
       }
     }
     // 2차: 인덱스 데이터 fallback (패널이 없는 어노테이션 보존)
@@ -1570,34 +1795,46 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
       // Save existing panel position
       const panelName: string = "📋 Annotation: " + spec.num;
       let existPos: { x: number; y: number } | null = null;
-      for (let pi = 0; pi < figma.currentPage.children.length; pi++) {
-        const pn: string = figma.currentPage.children[pi].name;
-        if (pn === panelName) {
-          existPos = { x: figma.currentPage.children[pi].x, y: figma.currentPage.children[pi].y };
-          break;
+
+      // 그룹 내부에서 패널 위치 검색 (삭제 전)
+      const rebAnnotGroup: GroupNode | null = findAnnotationGroup(spec.num);
+      if (rebAnnotGroup) {
+        for (let rgi = 0; rgi < rebAnnotGroup.children.length; rgi++) {
+          if (rebAnnotGroup.children[rgi].name === panelName) {
+            existPos = { x: rebAnnotGroup.children[rgi].x, y: rebAnnotGroup.children[rgi].y };
+            break;
+          }
+        }
+      }
+      // 페이지 레벨 폴백
+      if (!existPos) {
+        for (let pi = 0; pi < figma.currentPage.children.length; pi++) {
+          const pn: string = figma.currentPage.children[pi].name;
+          if (pn === panelName) {
+            existPos = { x: figma.currentPage.children[pi].x, y: figma.currentPage.children[pi].y };
+            break;
+          }
         }
       }
 
-      // Remove old panel only (keep marker)
-      for (let di = figma.currentPage.children.length - 1; di >= 0; di--) {
-        const dn: string = figma.currentPage.children[di].name;
-        if (dn === panelName) {
-          figma.currentPage.children[di].remove();
-        }
-      }
+      // Remove old artifacts (그룹 + 레거시 페이지 레벨)
+      await removeExistingArtifacts(spec.num);
 
-      // Create new panel with current theme
-      const mColor: RGB = spec.data.color ? hexToRgb(spec.data.color) : CLR.headerBg;
+      // Create new panel + marker with current theme
+      const mColor: RGB = hexToRgb(spec.data.color || DEFAULT_MARKER_HEX);
       const newPanel: FrameNode = createSpecPanel(spec.data.title, spec.data.desc, spec.num, tNode as SceneNode, mColor);
       figma.currentPage.appendChild(newPanel);
       if (existPos) { newPanel.x = existPos.x; newPanel.y = existPos.y; }
       newPanel.setPluginData("specTags", spec.data.desc);
       newPanel.setPluginData("targetNodeId", targetId);
-      newPanel.setPluginData("markerColor", spec.data.color || "");
+      newPanel.setPluginData("markerColor", spec.data.color || DEFAULT_MARKER_HEX);
       newPanel.setRelaunchData({ edit: '' });
       for (let ci = 0; ci < newPanel.children.length; ci++) {
         newPanel.children[ci].locked = true;
       }
+
+      const rebMarker: FrameNode = createMarkerBadge(spec.num, tNode as SceneNode, mColor);
+      groupAnnotationArtifacts(newPanel, rebMarker, spec.num);
       rebuilt++;
     }
     // Restore hidden state after rebuild
@@ -1629,10 +1866,26 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
 
     // 패널 targetNodeId 캐시 (O(n) 단일 패스)
     const panelTargetMap: Record<string, string> = {};
-    for (let pi = 0; pi < children.length; pi++) {
-      const pm: RegExpMatchArray | null = children[pi].name.match(/^📋 Annotation: (\d+)/);
+    function cachePanelTarget(node: SceneNode): void {
+      const pm: RegExpMatchArray | null = node.name.match(/^📋 Annotation: (\d+)/);
       if (pm) {
-        try { panelTargetMap[pm[1]] = children[pi].getPluginData("targetNodeId") || ""; } catch(e) {}
+        try { panelTargetMap[pm[1]] = node.getPluginData("targetNodeId") || ""; } catch(e) {}
+      }
+    }
+    for (let pi = 0; pi < children.length; pi++) {
+      cachePanelTarget(children[pi]);
+      // 부모 그룹 내부도 스캔
+      if (children[pi].name === PARENT_GROUP_NAME && children[pi].type === "GROUP") {
+        const listGrp: GroupNode = children[pi] as GroupNode;
+        for (let gi = 0; gi < listGrp.children.length; gi++) {
+          const lgc: SceneNode = listGrp.children[gi];
+          if (lgc.type === "GROUP" && lgc.name.indexOf(ANNOT_GROUP_PREFIX) === 0) {
+            const ag: GroupNode = lgc as GroupNode;
+            for (let ai = 0; ai < ag.children.length; ai++) {
+              cachePanelTarget(ag.children[ai]);
+            }
+          }
+        }
       }
     }
 
@@ -1658,22 +1911,37 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
     // 2차: 패널 pluginData에서 폴백 스캔 (숨김 노드가 사라진 경우)
     interface ListFallback { pnum: string; pDesc: string; pColor: string; pTargetId: string; }
     const listFallbacks: ListFallback[] = [];
-    for (let k = 0; k < children.length; k++) {
-      const ck: SceneNode = children[k];
-      const panelMatch: RegExpMatchArray | null = ck.name.match(/^📋 Annotation: (\d+)/);
-      if (!panelMatch) continue;
+    function collectListFallback(node: SceneNode): void {
+      const panelMatch: RegExpMatchArray | null = node.name.match(/^📋 Annotation: (\d+)/);
+      if (!panelMatch) return;
       const pnum: string = panelMatch[1];
-      if (foundNums[pnum]) continue;
+      if (foundNums[pnum]) return;
 
       let pDesc: string = "", pColor: string = "", pTargetId: string = "";
       try {
-        pDesc = ck.getPluginData("specTags") || "";
-        pColor = ck.getPluginData("markerColor") || "";
-        pTargetId = ck.getPluginData("targetNodeId") || "";
+        pDesc = node.getPluginData("specTags") || "";
+        pColor = node.getPluginData("markerColor") || "";
+        pTargetId = node.getPluginData("targetNodeId") || "";
       } catch(e) {}
       if (pTargetId) {
         listFallbacks.push({ pnum: pnum, pDesc: pDesc, pColor: pColor, pTargetId: pTargetId });
         foundNums[pnum] = true;
+      }
+    }
+    for (let k = 0; k < children.length; k++) {
+      collectListFallback(children[k]);
+      // 부모 그룹 내부도 스캔
+      if (children[k].name === PARENT_GROUP_NAME && children[k].type === "GROUP") {
+        const lGrp: GroupNode = children[k] as GroupNode;
+        for (let gi = 0; gi < lGrp.children.length; gi++) {
+          const lgc: SceneNode = lGrp.children[gi];
+          if (lgc.type === "GROUP" && lgc.name.indexOf(ANNOT_GROUP_PREFIX) === 0) {
+            const ag: GroupNode = lgc as GroupNode;
+            for (let ai = 0; ai < ag.children.length; ai++) {
+              collectListFallback(ag.children[ai]);
+            }
+          }
+        }
       }
     }
     // 일괄 병렬 resolve (Bug 6 수정)
@@ -1821,10 +2089,37 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
     const seen: Record<number, boolean> = {};
     const targetNodeIds: string[] = [];
 
-    // Single pass: set visibility + collect nums and target IDs
+    // 부모 그룹 내 개별 그룹 순회
+    const visParentGroup: GroupNode | null = findParentGroup();
+    if (visParentGroup) {
+      for (let gi = 0; gi < visParentGroup.children.length; gi++) {
+        const gc: SceneNode = visParentGroup.children[gi];
+        if (gc.type === "GROUP" && gc.name.indexOf(ANNOT_GROUP_PREFIX) === 0) {
+          gc.visible = msg.visible;
+          const gm: RegExpMatchArray | null = gc.name.match(/^📌 AIR-(\d+)/);
+          if (gm) {
+            const gnum: number = parseInt(gm[1]);
+            if (!seen[gnum]) { allNums.push(gnum); seen[gnum] = true; }
+          }
+          // 그룹 내 패널에서 targetNodeId 수집
+          const ag: GroupNode = gc as GroupNode;
+          for (let ai = 0; ai < ag.children.length; ai++) {
+            if (ag.children[ai].name.match(/^📋 Annotation: \d+/)) {
+              try {
+                const tid: string = ag.children[ai].getPluginData("targetNodeId") || "";
+                if (tid) targetNodeIds.push(tid);
+              } catch(e) {}
+            }
+          }
+        }
+      }
+    }
+
+    // 레거시: 페이지 레벨 검색
     const children: readonly SceneNode[] = figma.currentPage.children;
     for (let i = 0; i < children.length; i++) {
       const c: SceneNode = children[i];
+      if (c.name === PARENT_GROUP_NAME) continue;
       const pm: RegExpMatchArray | null = c.name.match(/^📋 Annotation: (\d+)/);
       if (pm) {
         c.visible = msg.visible;
@@ -1864,7 +2159,7 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
       if (tNode && "children" in tNode) {
         const tChildren: readonly SceneNode[] = (tNode as FrameNode).children;
         for (let k = 0; k < tChildren.length; k++) {
-          if (tChildren[k].name.match(/^🏷️ \d+$/)) {
+          if (tChildren[k].name.match(/^🏷️ \d+/)) {
             tChildren[k].visible = msg.visible;
           }
         }
@@ -1918,15 +2213,21 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
       const newNum: number = oldToNew[oldNum];
       let data: HiddenData | null = reorderHiddenMap.get(oldNum) || null;
 
-      // Fallback to panel pluginData
+      // Fallback to panel pluginData (그룹 내부 + 페이지 레벨)
       if (!data) {
-        for (let ci = 0; ci < children.length; ci++) {
-          const cn: string = children[ci].name;
+        const roAnnotGrp: GroupNode | null = findAnnotationGroup(oldNum);
+        const roSearchNodes: SceneNode[] = [];
+        if (roAnnotGrp) {
+          for (let ai = 0; ai < roAnnotGrp.children.length; ai++) roSearchNodes.push(roAnnotGrp.children[ai]);
+        }
+        for (let ci = 0; ci < children.length; ci++) roSearchNodes.push(children[ci]);
+        for (let ci = 0; ci < roSearchNodes.length; ci++) {
+          const cn: string = roSearchNodes[ci].name;
           if (cn === "📋 Annotation: " + oldNum) {
             try {
-              const pd: string = children[ci].getPluginData("specTags") || "";
-              const pc: string = children[ci].getPluginData("markerColor") || "";
-              const pt: string = children[ci].getPluginData("targetNodeId") || "";
+              const pd: string = roSearchNodes[ci].getPluginData("specTags") || "";
+              const pc: string = roSearchNodes[ci].getPluginData("markerColor") || "";
+              const pt: string = roSearchNodes[ci].getPluginData("targetNodeId") || "";
               let pTitle: string = "";
               if (pt) {
                 const tn: BaseNode | null = await figma.getNodeByIdAsync(pt);
@@ -1944,13 +2245,24 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
 
       if (!data || !data.target) continue;
 
-      // Save panel position
+      // Save panel position (그룹 내부 + 페이지 레벨)
       let panelPos: { x: number; y: number } | null = null;
-      for (let ci = 0; ci < children.length; ci++) {
-        const cn: string = children[ci].name;
-        if (cn === "📋 Annotation: " + oldNum) {
-          panelPos = { x: children[ci].x, y: children[ci].y };
-          break;
+      const roPanelGrp: GroupNode | null = findAnnotationGroup(oldNum);
+      if (roPanelGrp) {
+        for (let ai = 0; ai < roPanelGrp.children.length; ai++) {
+          if (roPanelGrp.children[ai].name === "📋 Annotation: " + oldNum) {
+            panelPos = { x: roPanelGrp.children[ai].x, y: roPanelGrp.children[ai].y };
+            break;
+          }
+        }
+      }
+      if (!panelPos) {
+        for (let ci = 0; ci < children.length; ci++) {
+          const cn: string = children[ci].name;
+          if (cn === "📋 Annotation: " + oldNum) {
+            panelPos = { x: children[ci].x, y: children[ci].y };
+            break;
+          }
         }
       }
 
@@ -1982,7 +2294,7 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
       if (!tNode) continue;
 
       const newNumStr: string = String(entry.newNum);
-      const mColor: RGB = entry.data.color ? hexToRgb(entry.data.color) : CLR.headerBg;
+      const mColor: RGB = hexToRgb(entry.data.color || DEFAULT_MARKER_HEX);
       const summary: string = makeSummary(entry.data.desc);
       const displayTitle: string = entry.data.title || stripPrefix(tNode.name);
 
@@ -1998,14 +2310,15 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
       }
       panel.setPluginData("specTags", entry.data.desc);
       panel.setPluginData("targetNodeId", entry.data.target);
-      panel.setPluginData("markerColor", entry.data.color || "");
+      panel.setPluginData("markerColor", entry.data.color || DEFAULT_MARKER_HEX);
       panel.setRelaunchData({ edit: '' });
       for (let ci = 0; ci < panel.children.length; ci++) {
         panel.children[ci].locked = true;
       }
 
-      // Create marker
-      createMarkerBadge(newNumStr, tNode as SceneNode, mColor);
+      // Create marker + group
+      const roMarker: FrameNode = createMarkerBadge(newNumStr, tNode as SceneNode, mColor);
+      groupAnnotationArtifacts(panel, roMarker, newNumStr);
 
       // Relaunch data on target
       (tNode as SceneNode).setRelaunchData({ edit: '' });
@@ -2052,6 +2365,34 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
     // Collect all annotation numbers
     const allNums: Set<string> = new Set();
     const targetIds: Record<string, string> = {};
+    // Also get target IDs from index map
+    const delAllMap: Map<string, HiddenData> = buildHiddenDataMap();
+    delAllMap.forEach(function(data: HiddenData, num: string) {
+      allNums.add(num);
+      if (data.target && !targetIds[num]) targetIds[num] = data.target;
+    });
+
+    // 부모 그룹이 있으면 통째로 삭제
+    const delParentGroup: GroupNode | null = findParentGroup();
+    if (delParentGroup) {
+      // 그룹 내 패널에서 번호+targetId 수집
+      for (let gi = 0; gi < delParentGroup.children.length; gi++) {
+        const gc: SceneNode = delParentGroup.children[gi];
+        if (gc.type === "GROUP" && gc.name.indexOf(ANNOT_GROUP_PREFIX) === 0) {
+          const ag: GroupNode = gc as GroupNode;
+          for (let ai = 0; ai < ag.children.length; ai++) {
+            const fpMatch: RegExpMatchArray | null = ag.children[ai].name.match(/^📋 Annotation: (\d+)/);
+            if (fpMatch) {
+              allNums.add(fpMatch[1]);
+              try { const tid: string = ag.children[ai].getPluginData("targetNodeId") || ""; if (tid) targetIds[fpMatch[1]] = tid; } catch(e) {}
+            }
+          }
+        }
+      }
+      delParentGroup.remove();
+    }
+
+    // 레거시: 페이지 레벨 산출물 수집+삭제
     const children: readonly SceneNode[] = figma.currentPage.children;
     for (let i = 0; i < children.length; i++) {
       const c: SceneNode = children[i];
@@ -2066,17 +2407,11 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
       m = c.name.match(/^\[AIR-(\d+)\]/);
       if (m) { allNums.add(m[1]); continue; }
     }
-    // Also get target IDs from index map
-    const delAllMap: Map<string, HiddenData> = buildHiddenDataMap();
-    delAllMap.forEach(function(data: HiddenData, num: string) {
-      allNums.add(num);
-      if (data.target && !targetIds[num]) targetIds[num] = data.target;
-    });
 
     const numArr: string[] = [];
     allNums.forEach(function(n: string) { numArr.push(n); });
 
-    // Remove all artifacts
+    // Remove remaining legacy artifacts
     for (let i = 0; i < numArr.length; i++) {
       await removeExistingArtifacts(numArr[i]);
     }
@@ -2112,7 +2447,20 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
       const data: HiddenData | undefined = delMap.get(num);
       if (data && data.target) targetId = data.target;
       if (!targetId) {
-        // Try panel pluginData
+        // Try annotation group first
+        const delAnnotGroup: GroupNode | null = findAnnotationGroup(num);
+        if (delAnnotGroup) {
+          for (let di = 0; di < delAnnotGroup.children.length; di++) {
+            const dpm: RegExpMatchArray | null = delAnnotGroup.children[di].name.match(/^📋 Annotation: (\d+)/);
+            if (dpm && dpm[1] === num) {
+              try { targetId = delAnnotGroup.children[di].getPluginData("targetNodeId") || ""; } catch(e) {}
+              break;
+            }
+          }
+        }
+      }
+      if (!targetId) {
+        // Try page-level panel pluginData
         for (let pi = 0; pi < figma.currentPage.children.length; pi++) {
           const pc: SceneNode = figma.currentPage.children[pi];
           const pm: RegExpMatchArray | null = pc.name.match(/^📋 Annotation: (\d+)/);

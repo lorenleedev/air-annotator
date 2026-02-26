@@ -7,7 +7,7 @@
   "permissions": ["currentuser"],
   "capabilities": [],
   "enableProposedApi": false,
-  "editorType": ["figma"],
+  "editorType": ["figma", "dev"],
   "networkAccess": { "allowedDomains": ["none"] },
   "documentAccess": "dynamic-page",
   "relaunchButtons": [
