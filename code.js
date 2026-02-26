@@ -1954,6 +1954,7 @@
         readSelectedDesc();
       }
       if (msg.type === "rebuild-index") {
+        yield renumberAllSpecs();
         yield updateSpecIndex();
         figma.notify("📑 AI용 스펙 인덱스를 최신 상태로 갱신했어요");
         figma.ui.postMessage({ type: "rebuild-done" });

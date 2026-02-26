@@ -2262,6 +2262,7 @@ figma.ui.onmessage = async function(msg: UIMessage): Promise<void> {
   }
 
   if (msg.type === "rebuild-index") {
+    await renumberAllSpecs();
     await updateSpecIndex();
     figma.notify("📑 AI용 스펙 인덱스를 최신 상태로 갱신했어요");
     figma.ui.postMessage({ type: "rebuild-done" });
