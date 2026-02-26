@@ -67,6 +67,9 @@ window.onmessage = function(e) {
   if (msg.type === "rebuild-done") {
     parent.postMessage({ pluginMessage: { type: "list-specs" } }, "*");
   }
+  if (msg.type === "remap-done") {
+    parent.postMessage({ pluginMessage: { type: "list-specs" } }, "*");
+  }
   if (msg.type === "visibility-changed") {
     refreshList();
   }

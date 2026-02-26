@@ -709,6 +709,9 @@
       </button>
       <button class="list-btn" onclick="exportSpecs('md')" data-tip="Download as Markdown" data-i18n-tip="tip_md">MD</button>
       <button class="list-btn" onclick="exportSpecs('json')" data-tip="Download as JSON" data-i18n-tip="tip_json">JSON</button>
+      <button class="list-btn" id="btnRemapTargets" onclick="remapTargets()" data-tip="Remap targets after page copy" data-i18n-tip="tip_remap">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2l3 3-3 3"/><path d="M3 8V7a3 3 0 013-3h7"/><path d="M6 14l-3-3 3-3"/><path d="M13 8v1a3 3 0 01-3 3H3"/></svg>
+      </button>
       <button class="list-btn" id="btnRebuildIndex" onclick="rebuildIndex()" data-tip="Sync and refresh annotations" data-i18n-tip="tip_index">Sync</button>
     </div>
   </div>
@@ -802,6 +805,7 @@ var I18N = {
     tip_md: "Download as Markdown",
     tip_json: "Download as JSON",
     tip_index: "Sync and refresh annotations",
+    tip_remap: "Remap targets after page copy",
     btn_hide: "Hide",
     btn_show: "Show",
     btn_hide_all: "Hide All",
@@ -863,6 +867,7 @@ var I18N = {
     tip_md: "마크다운 다운로드",
     tip_json: "JSON 다운로드",
     tip_index: "어노테이션 동기화 및 새로고침",
+    tip_remap: "페이지 복사 후 대상 재연결",
     btn_hide: "숨기기",
     btn_show: "표시",
     btn_hide_all: "모두 숨기기",
@@ -1061,6 +1066,7 @@ function switchTab(id) {
 
 function refreshList() { parent.postMessage({ pluginMessage: { type: "list-specs" } }, "*"); }
 function rebuildIndex() { parent.postMessage({ pluginMessage: { type: "rebuild-index" } }, "*"); }
+function remapTargets() { parent.postMessage({ pluginMessage: { type: "remap-targets" } }, "*"); }
 
 function applyViewMode() {
   // Hide write-only UI elements for view-only users
@@ -1081,6 +1087,9 @@ function applyViewMode() {
   // Hide Index rebuild button
   var indexBtn = document.getElementById("btnRebuildIndex");
   if (indexBtn) indexBtn.style.display = "none";
+  // Hide Remap button
+  var remapBtn = document.getElementById("btnRemapTargets");
+  if (remapBtn) remapBtn.style.display = "none";
   // Hide delete-all button and batch bar
   var delAllBtn = document.getElementById("btnDeleteAll");
   if (delAllBtn) delAllBtn.style.display = "none";
@@ -1541,6 +1550,9 @@ window.onmessage = function(e) {
     parent.postMessage({ pluginMessage: { type: "list-specs" } }, "*");
   }
   if (msg.type === "rebuild-done") {
+    parent.postMessage({ pluginMessage: { type: "list-specs" } }, "*");
+  }
+  if (msg.type === "remap-done") {
     parent.postMessage({ pluginMessage: { type: "list-specs" } }, "*");
   }
   if (msg.type === "visibility-changed") {

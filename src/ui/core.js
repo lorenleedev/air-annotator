@@ -104,6 +104,7 @@ function switchTab(id) {
 
 function refreshList() { parent.postMessage({ pluginMessage: { type: "list-specs" } }, "*"); }
 function rebuildIndex() { parent.postMessage({ pluginMessage: { type: "rebuild-index" } }, "*"); }
+function remapTargets() { parent.postMessage({ pluginMessage: { type: "remap-targets" } }, "*"); }
 
 function applyViewMode() {
   // Hide write-only UI elements for view-only users
@@ -124,6 +125,9 @@ function applyViewMode() {
   // Hide Index rebuild button
   var indexBtn = document.getElementById("btnRebuildIndex");
   if (indexBtn) indexBtn.style.display = "none";
+  // Hide Remap button
+  var remapBtn = document.getElementById("btnRemapTargets");
+  if (remapBtn) remapBtn.style.display = "none";
   // Hide delete-all button and batch bar
   var delAllBtn = document.getElementById("btnDeleteAll");
   if (delAllBtn) delAllBtn.style.display = "none";
